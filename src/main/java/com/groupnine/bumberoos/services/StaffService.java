@@ -25,6 +25,10 @@ public class StaffService {
         }
     }
 
+    public ArrayList<StaffEntity> getStaffList(){
+        return this.staffList;
+    }
+
     public void saveAll() {
         TextStorageUtil.saveStaffToTextFile(staffList, FILE_NAME);
     }
