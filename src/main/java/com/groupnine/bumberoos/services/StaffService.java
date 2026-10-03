@@ -120,9 +120,5 @@ public boolean removeStaff(int id) {
                 .orElse(null);
     }
 
-    public ArrayList<StaffEntity> getAllStaff() {
-        return new ArrayList<>(staffList);
-    }
-
 
 }

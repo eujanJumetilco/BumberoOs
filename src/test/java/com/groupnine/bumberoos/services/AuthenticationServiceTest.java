@@ -249,7 +249,7 @@ class AuthenticationServiceTest {
         givenStaff(admin);
 
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / " + ADMIN_PASSWORD);
-        StaffEntity result = authenticationService.logIn(ADMIN_EMAIL, ADMIN_PASSWORD);
+        StaffEntity result = authenticationService.signIn(ADMIN_EMAIL, ADMIN_PASSWORD);
 
         System.out.println("  Expected: Maria Santos | Actual: " + result.getName());
         assertSame(admin, result);
@@ -262,7 +262,7 @@ class AuthenticationServiceTest {
         givenStaff(admin);
 
         System.out.println("  Attempt: ADMIN@BUMBEROOS.COM / " + ADMIN_PASSWORD);
-        StaffEntity result = authenticationService.logIn("ADMIN@BUMBEROOS.COM", ADMIN_PASSWORD);
+        StaffEntity result = authenticationService.signIn("ADMIN@BUMBEROOS.COM", ADMIN_PASSWORD);
 
         System.out.println("  Expected: Maria Santos | Actual: " + result.getName());
         assertSame(admin, result);
@@ -276,7 +276,7 @@ class AuthenticationServiceTest {
         givenStaff(regularStaff(), first, second);
 
         System.out.println("  Attempt: jose@bumberoos.com / other456");
-        StaffEntity result = authenticationService.logIn("jose@bumberoos.com", "other456");
+        StaffEntity result = authenticationService.signIn("jose@bumberoos.com", "other456");
 
         System.out.println("  Expected: Jose Rizal | Actual: " + result.getName());
         assertSame(second, result);
@@ -289,7 +289,7 @@ class AuthenticationServiceTest {
         givenStaff(adminWithoutCredentials(), admin);
 
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / " + ADMIN_PASSWORD);
-        StaffEntity result = authenticationService.logIn(ADMIN_EMAIL, ADMIN_PASSWORD);
+        StaffEntity result = authenticationService.signIn(ADMIN_EMAIL, ADMIN_PASSWORD);
 
         System.out.println("  Expected: Maria Santos | Actual: " + result.getName());
         assertSame(admin, result);
@@ -304,7 +304,7 @@ class AuthenticationServiceTest {
         System.out.println("  Attempt: '' / " + ADMIN_PASSWORD);
 
         expectThrown(InvalidCredentialException.class,
-                () -> authenticationService.logIn("", ADMIN_PASSWORD));
+                () -> authenticationService.signIn("", ADMIN_PASSWORD));
         verifyNoInteractions(staffService);
     }
 
@@ -314,7 +314,7 @@ class AuthenticationServiceTest {
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / ''");
 
         expectThrown(InvalidCredentialException.class,
-                () -> authenticationService.logIn(ADMIN_EMAIL, ""));
+                () -> authenticationService.signIn(ADMIN_EMAIL, ""));
         verifyNoInteractions(staffService);
     }
 
@@ -324,7 +324,7 @@ class AuthenticationServiceTest {
         System.out.println("  Attempt: adminbumberoos.com / " + ADMIN_PASSWORD);
 
         expectThrown(InvalidCredentialException.class,
-                () -> authenticationService.logIn("adminbumberoos.com", ADMIN_PASSWORD));
+                () -> authenticationService.signIn("adminbumberoos.com", ADMIN_PASSWORD));
         verifyNoInteractions(staffService);
     }
 
@@ -334,7 +334,7 @@ class AuthenticationServiceTest {
         System.out.println("  Attempt: admin@ / " + ADMIN_PASSWORD);
 
         expectThrown(InvalidCredentialException.class,
-                () -> authenticationService.logIn("admin@", ADMIN_PASSWORD));
+                () -> authenticationService.signIn("admin@", ADMIN_PASSWORD));
         verifyNoInteractions(staffService);
     }
 
@@ -344,7 +344,7 @@ class AuthenticationServiceTest {
         System.out.println("  Attempt: ' admin@bumberoos.com ' / " + ADMIN_PASSWORD);
 
         expectThrown(InvalidCredentialException.class,
-                () -> authenticationService.logIn(" admin@bumberoos.com ", ADMIN_PASSWORD));
+                () -> authenticationService.signIn(" admin@bumberoos.com ", ADMIN_PASSWORD));
         verifyNoInteractions(staffService);
     }
 
@@ -357,7 +357,7 @@ class AuthenticationServiceTest {
         System.out.println("  Attempt: null / " + ADMIN_PASSWORD);
 
         expectThrown(InvalidCredentialException.class,
-                () -> authenticationService.logIn(null, ADMIN_PASSWORD));
+                () -> authenticationService.signIn(null, ADMIN_PASSWORD));
     }
 
     @Test
@@ -366,7 +366,7 @@ class AuthenticationServiceTest {
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / null");
 
         expectThrown(InvalidCredentialException.class,
-                () -> authenticationService.logIn(ADMIN_EMAIL, null));
+                () -> authenticationService.signIn(ADMIN_EMAIL, null));
     }
 
     // ===== logIn() TESTS: FAILED LOGIN ===== //
@@ -386,7 +386,7 @@ class AuthenticationServiceTest {
         givenStaff(adminWithCredentials());
 
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / wrongpass");
-        assertPlainLoginFailure(() -> authenticationService.logIn(ADMIN_EMAIL, "wrongpass"));
+        assertPlainLoginFailure(() -> authenticationService.signIn(ADMIN_EMAIL, "wrongpass"));
     }
 
     @Test
@@ -395,7 +395,7 @@ class AuthenticationServiceTest {
         givenStaff(adminWithCredentials());
 
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / SECRET123");
-        assertPlainLoginFailure(() -> authenticationService.logIn(ADMIN_EMAIL, "SECRET123"));
+        assertPlainLoginFailure(() -> authenticationService.signIn(ADMIN_EMAIL, "SECRET123"));
     }
 
     @Test
@@ -404,7 +404,7 @@ class AuthenticationServiceTest {
         givenStaff(adminWithCredentials());
 
         System.out.println("  Attempt: nobody@bumberoos.com / " + ADMIN_PASSWORD);
-        assertPlainLoginFailure(() -> authenticationService.logIn("nobody@bumberoos.com", ADMIN_PASSWORD));
+        assertPlainLoginFailure(() -> authenticationService.signIn("nobody@bumberoos.com", ADMIN_PASSWORD));
     }
 
     @Test
@@ -413,7 +413,7 @@ class AuthenticationServiceTest {
         givenStaff();
 
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / " + ADMIN_PASSWORD);
-        assertPlainLoginFailure(() -> authenticationService.logIn(ADMIN_EMAIL, ADMIN_PASSWORD));
+        assertPlainLoginFailure(() -> authenticationService.signIn(ADMIN_EMAIL, ADMIN_PASSWORD));
     }
 
     @Test
@@ -422,7 +422,7 @@ class AuthenticationServiceTest {
         givenStaff(regularStaffWithCredentials());
 
         System.out.println("  Attempt: " + ADMIN_EMAIL + " / " + ADMIN_PASSWORD);
-        assertPlainLoginFailure(() -> authenticationService.logIn(ADMIN_EMAIL, ADMIN_PASSWORD));
+        assertPlainLoginFailure(() -> authenticationService.signIn(ADMIN_EMAIL, ADMIN_PASSWORD));
     }
 
     @Test
@@ -430,7 +430,7 @@ class AuthenticationServiceTest {
     void logIn_readsStaffFromStaffService() throws Exception {
         givenStaff(adminWithCredentials());
 
-        authenticationService.logIn(ADMIN_EMAIL, ADMIN_PASSWORD);
+        authenticationService.signIn(ADMIN_EMAIL, ADMIN_PASSWORD);
 
         verify(staffService).getStaffList();
         System.out.println("  Verified: StaffService.getStaffList() was called");
