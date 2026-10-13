@@ -26,14 +26,6 @@ public class StaffEntity {
     @Column(nullable = false)
     private StaffAvailability staffAvailability = StaffAvailability.UNAVAILABLE;
 
-    private boolean admin;
-
-    @Column(unique = true)
-    private String email;
-
-    /** BCrypt hash, never the raw password. */
-    private String password;
-
     private String name;
     private String role;
     private String contactNumber;
@@ -54,11 +46,10 @@ public class StaffEntity {
     private LocalDate dateJoined;
 
     public StaffEntity(
-            boolean admin, String name, String role, String contactNumber,
+            String name, String role, String contactNumber,
             String address, boolean employed, List<String> trainings,
             List<String> certifications
     ) {
-        this.admin = admin;
         this.name = name;
         this.role = role;
         this.contactNumber = contactNumber;
@@ -67,13 +58,6 @@ public class StaffEntity {
         this.trainings = trainings == null ? new ArrayList<>() : new ArrayList<>(trainings);
         this.certifications = certifications == null ? new ArrayList<>() : new ArrayList<>(certifications);
         normalize();
-    }
-
-    /** Marks this staff member as an admin. The password must already be hashed. */
-    public void setAdminCredentials(String email, String hashedPassword) {
-        this.admin = true;
-        this.email = StringUtil.normalizeEmail(email);
-        this.password = hashedPassword;
     }
 
     @PrePersist
@@ -88,7 +72,6 @@ public class StaffEntity {
         role = StringUtil.toTitleCase(role);
         contactNumber = StringUtil.normalizePhoneNumber(contactNumber);
         address = StringUtil.capitalizeFirstLetter(address);
-        email = StringUtil.normalizeEmail(email);
         trainings = StringUtil.cleanList(trainings);
         certifications = StringUtil.cleanList(certifications);
     }

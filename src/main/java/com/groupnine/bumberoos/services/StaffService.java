@@ -71,11 +71,6 @@ public class StaffService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<StaffEntity> findByEmail(String email) {
-        return staffRepository.findByEmailIgnoreCase(email);
-    }
-
-    @Transactional(readOnly = true)
     public List<StaffEntity> getStaffList() {
         return staffRepository.findAll();
     }

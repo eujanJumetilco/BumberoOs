@@ -21,7 +21,7 @@ class StaffServiceTest {
 
     private StaffEntity sample() {
         return new StaffEntity(
-                false, "test person", "driver", "09171234567",
+                "test person", "driver", "09171234567",
                 "paranaque city", true,
                 new ArrayList<>(List.of("first aid")),
                 new ArrayList<>(List.of("professional license"))
@@ -74,12 +74,4 @@ class StaffServiceTest {
         assertFalse(service.removeStaff(added.getId()));
     }
 
-    @Test
-    void findByEmail_isCaseInsensitive() {
-        StaffEntity staff = sample();
-        staff.setAdminCredentials("Person@Example.com", "hash");
-        service.addStaff(staff);
-
-        assertTrue(service.findByEmail("PERSON@example.com").isPresent());
-    }
 }

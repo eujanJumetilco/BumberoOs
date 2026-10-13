@@ -1,27 +1,25 @@
 package com.groupnine.bumberoos.services;
 
-import com.groupnine.bumberoos.domain.entities.StaffEntity;
+import com.groupnine.bumberoos.domain.entities.UserAccountEntity;
+import com.groupnine.bumberoos.domain.enums.UserRole;
 import com.groupnine.bumberoos.domain.exceptions.EmailAlreadyInUseException;
 import com.groupnine.bumberoos.domain.exceptions.InvalidCredentialException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
-import java.util.Optional;
 
 @Service
 public class AuthenticationService {
 
     // ========== DEPENDENCY SETUP ========== //
 
-    private final StaffService staffService;
+    private final UserAccountService userAccountService;
     private final PasswordEncoder passwordEncoder;
 
     public AuthenticationService(
-        StaffService staffService,
+        UserAccountService userAccountService,
         PasswordEncoder passwordEncoder
     ){
-        this.staffService = staffService;
+        this.userAccountService = userAccountService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -31,60 +29,39 @@ public class AuthenticationService {
     // returns false if no admin is registered, should trigger the ui to prompt the user
     // to create an account, otherwise present the user with a log in screen
     public Boolean isRegistered(){
-        return !this.getAdminList().isEmpty();
+        return userAccountService.hasEnabledAdmin();
     }
 
     // logs in user based on email and password
-    public StaffEntity signIn(String email, String password) throws Exception {
+    public UserAccountEntity signIn(String email, String password) throws Exception {
         this.validateEmailAndPassword(email, password);
 
-        Optional<StaffEntity> account = this.getAdminList().stream()
-                .filter(admin ->
-                    admin.getEmail().equalsIgnoreCase(email)
-                        && passwordEncoder.matches(password, admin.getPassword())
-                )
-                .findFirst();
-
-        if (account.isPresent()) return account.get();
-        else throw new Exception("please try logging in again");
+        return userAccountService.findByEmail(email.trim())
+                .filter(UserAccountEntity::isEnabled)
+                .filter(account -> passwordEncoder.matches(password, account.getPasswordHash()))
+                .orElseThrow(() -> new Exception("please try logging in again"));
     }
 
-    public StaffEntity signUp(
-            String email, String password, String name, String contactNumber,
-            String address, boolean isEmployed, List<String> trainings,
-            List<String> certifications
+    // creates a new account; staff records are linked separately via UserAccountService.linkStaff
+    public UserAccountEntity signUp(
+            String email, String password, String displayName, UserRole role
     ) throws Exception {
         this.validateEmailAndPassword(email, password);
 
-        // Any staff row (admin or not) already holding this email blocks sign up
-        boolean emailTaken = staffService.getStaffList().stream()
-                .anyMatch(staff -> staff.getEmail() != null && staff.getEmail().equalsIgnoreCase(email.trim()));
-        if (emailTaken) throw new EmailAlreadyInUseException("please use another email address");
+        if (userAccountService.emailExists(email.trim())) {
+            throw new EmailAlreadyInUseException("please use another email address");
+        }
 
-        StaffEntity newAdmin = new StaffEntity(
-                true, name, "Admin", contactNumber, address,
-                isEmployed, trainings, certifications
+        UserAccountEntity account = new UserAccountEntity(
+                email, passwordEncoder.encode(password),
+                role == null ? UserRole.ADMIN : role, displayName
         );
-        newAdmin.setAdminCredentials(email, passwordEncoder.encode(password));
 
-        return staffService.addStaff(newAdmin);
+        return userAccountService.addAccount(account);
     }
 
 
     // ========== HELPER METHODS ========== //
-
-    private List<StaffEntity> getAdminList(){
-        return staffService.getStaffList().stream()
-                .filter(staff ->
-                        (staff.isAdmin()
-                                && staff.getEmail() != null
-                                && !staff.getEmail().trim().isEmpty()
-                                && staff.getPassword() != null
-                                && !staff.getPassword().trim().isEmpty()
-                        )
-                )
-                .toList();
-    }
 
     private void validateEmailAndPassword(String email, String password) throws Exception{
         if (email == null || password == null || email.isBlank() || password.isBlank()) {
