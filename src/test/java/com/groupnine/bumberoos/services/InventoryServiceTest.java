@@ -3,55 +3,40 @@ package com.groupnine.bumberoos.services;
 import com.groupnine.bumberoos.domain.entities.ItemEntity;
 import com.groupnine.bumberoos.domain.enums.ItemCondition;
 import com.groupnine.bumberoos.domain.exceptions.InvalidInventoryExceptions;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@SpringBootTest
+@Transactional
 class InventoryServiceTest {
 
+    @Autowired
     private InventoryService service;
-    private final ArrayList<Integer> createdIds = new ArrayList<>();
 
-    @BeforeEach
-    void setUp() {
-        service = new InventoryService();
-        createdIds.clear();
-    }
-
-    @AfterEach
-    void tearDown() {
-        for (int id : createdIds) {
-            service.removeItem(id);
-        }
-    }
-
-    // Helper: adds a GOOD item with quantity 5 and tracks it for cleanup
+    // Helper: adds a GOOD item with quantity 5
     private ItemEntity addSample() throws InvalidInventoryExceptions {
-        ItemEntity added = service.addItem(
-                new ItemEntity(0, 0, "fire hose", "30 meter hose", 5)
+        return service.addItem(
+                new ItemEntity(ItemCondition.GOOD, "fire hose", "30 meter hose", 5)
         );
-        createdIds.add(added.getId());
-        return added;
     }
 
     // ===== ADD ===== //
 
     @Test
     void addItem_assignsIdAndStoresIt() throws Exception {
-        int expectedId = service.getNextId();
-
         ItemEntity added = addSample();
 
-        assertEquals(expectedId, added.getId());
-        assertEquals(expectedId + 1, service.getNextId());
+        assertNotNull(added.getId());
+        assertEquals("Fire Hose", added.getName());
         assertEquals(ItemCondition.GOOD, added.getItemCondition());
         assertEquals(5, added.getQuantity());
-        assertSame(added, service.findById(added.getId()));
+        assertTrue(service.findById(added.getId()).isPresent());
     }
 
     @Test
@@ -59,7 +44,7 @@ class InventoryServiceTest {
         int before = service.getAllItems().size();
 
         assertThrows(InvalidInventoryExceptions.class, () ->
-                service.addItem(new ItemEntity(0, 0, "   ", "blank name", 1)));
+                service.addItem(new ItemEntity(ItemCondition.GOOD, "   ", "blank name", 1)));
 
         assertEquals(before, service.getAllItems().size());
     }
@@ -69,15 +54,15 @@ class InventoryServiceTest {
         int before = service.getAllItems().size();
 
         assertThrows(InvalidInventoryExceptions.class, () ->
-                service.addItem(new ItemEntity(0, 0, "bad qty", "negative", -5)));
+                service.addItem(new ItemEntity(ItemCondition.GOOD, "bad qty", "negative", -5)));
 
         assertEquals(before, service.getAllItems().size());
     }
 
     @Test
     void addItem_allowsZeroQuantity() throws Exception {
-        ItemEntity added = service.addItem(new ItemEntity(0, 0, "empty stock", "none left", 0));
-        createdIds.add(added.getId());
+        ItemEntity added = service.addItem(
+                new ItemEntity(ItemCondition.GOOD, "empty stock", "none left", 0));
 
         assertEquals(0, added.getQuantity());
     }
@@ -85,24 +70,23 @@ class InventoryServiceTest {
     // ===== FIND ===== //
 
     @Test
-    void findById_returnsNullForUnknownId() {
-        assertNull(service.findById(-999));
+    void findById_returnsEmptyForUnknownId() {
+        assertTrue(service.findById(-999L).isEmpty());
     }
 
     @Test
     void findByName_isCaseInsensitive() throws Exception {
         ItemEntity added = addSample();
 
-        ItemEntity found = service.findByName("FIRE HOSE");
+        ItemEntity found = service.findByName("FIRE HOSE").orElseThrow();
 
-        assertNotNull(found);
         assertEquals(added.getId(), found.getId());
     }
 
     @Test
-    void findByName_returnsNullForUnknownOrNullName() {
-        assertNull(service.findByName("definitely not an item"));
-        assertNull(service.findByName(null));
+    void findByName_returnsEmptyForUnknownOrNullName() {
+        assertTrue(service.findByName("definitely not an item").isEmpty());
+        assertTrue(service.findByName(null).isEmpty());
     }
 
     // ===== EDIT ===== //
@@ -113,24 +97,25 @@ class InventoryServiceTest {
         LocalDate today = LocalDate.now();
 
         ItemEntity edited = service.editItem(
-                added.getId(), "rescue hose", "updated description", 10, 1, today
-        );
+                added.getId(), "rescue hose", "updated description", 10,
+                ItemCondition.DAMAGED, today
+        ).orElseThrow();
 
-        assertNotNull(edited);
-        assertTrue(edited.getName().equalsIgnoreCase("rescue hose"));
-        assertTrue(edited.getDescription().equalsIgnoreCase("updated description"));
+        assertEquals("Rescue Hose", edited.getName());
+        assertEquals("Updated description", edited.getDescription());
         assertEquals(10, edited.getQuantity());
         assertEquals(ItemCondition.DAMAGED, edited.getItemCondition());
         assertEquals(today, edited.getLastMaintained());
     }
 
     @Test
-    void editItem_keepsFieldsWhenNullOrMinusOne() throws Exception {
+    void editItem_keepsFieldsWhenNull() throws Exception {
         ItemEntity added = addSample();
         String originalName = added.getName();
         String originalDescription = added.getDescription();
 
-        ItemEntity edited = service.editItem(added.getId(), null, null, -1, -1, null);
+        ItemEntity edited = service.editItem(added.getId(), null, null, null, null, null)
+                .orElseThrow();
 
         assertEquals(originalName, edited.getName());
         assertEquals(originalDescription, edited.getDescription());
@@ -140,8 +125,8 @@ class InventoryServiceTest {
     }
 
     @Test
-    void editItem_returnsNullForUnknownId() {
-        assertNull(service.editItem(-999, null, null, -1, -1, null));
+    void editItem_returnsEmptyForUnknownId() {
+        assertTrue(service.editItem(-999L, null, null, null, null, null).isEmpty());
     }
 
     // ===== INCREASE QUANTITY ===== //
@@ -150,56 +135,35 @@ class InventoryServiceTest {
     void increaseQuantity_addsToExistingQuantity() throws Exception {
         ItemEntity added = addSample();
 
-        ItemEntity updated = service.increaseQuantity(added.getId(), 5);
-
-        assertEquals(10, updated.getQuantity());
+        assertEquals(10, service.increaseQuantity(added.getId(), 5).orElseThrow().getQuantity());
     }
 
     @Test
-    void increaseQuantity_returnsNullForUnknownId() {
-        assertNull(service.increaseQuantity(-999, 5));
+    void increaseQuantity_returnsEmptyForUnknownId() {
+        assertTrue(service.increaseQuantity(-999L, 5).isEmpty());
     }
 
-    // ===== GET ALL ===== //
+    // ===== GET ALL / REMOVE ===== //
 
     @Test
-    void getAllItems_containsAddedAndReturnsCopy() throws Exception {
+    void getAllItems_containsAdded() throws Exception {
         ItemEntity added = addSample();
 
-        ArrayList<ItemEntity> all = service.getAllItems();
-        assertTrue(all.contains(added));
-
-        all.clear();
-        assertNotNull(service.findById(added.getId()));
+        assertTrue(service.getAllItems().stream()
+                .anyMatch(i -> i.getId().equals(added.getId())));
     }
-
-    // ===== REMOVE ===== //
 
     @Test
     void removeItem_removesExistingAndReturnsFalseAfterwards() throws Exception {
         ItemEntity added = addSample();
 
         assertTrue(service.removeItem(added.getId()));
-        assertNull(service.findById(added.getId()));
+        assertTrue(service.findById(added.getId()).isEmpty());
         assertFalse(service.removeItem(added.getId()));
     }
 
     @Test
     void removeItem_returnsFalseForUnknownId() {
-        assertFalse(service.removeItem(-999));
-    }
-
-    // ===== PERSISTENCE ===== //
-
-    @Test
-    void saveAll_persistsToFile() throws Exception {
-        ItemEntity added = addSample();
-
-        InventoryService reloaded = new InventoryService();
-        ItemEntity persisted = reloaded.findById(added.getId());
-
-        assertNotNull(persisted);
-        assertEquals(added.getQuantity(), persisted.getQuantity());
-        assertEquals(added.getItemCondition(), persisted.getItemCondition());
+        assertFalse(service.removeItem(-999L));
     }
 }

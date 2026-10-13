@@ -1,6 +1,6 @@
 package com.groupnine.bumberoos.controllers;
 
-import com.groupnine.bumberoos.domain.entities.StaffEntity;
+import com.groupnine.bumberoos.services.StaffService;
 import org.springframework.web.bind.annotation.RestController;
 
 
@@ -9,10 +9,10 @@ public class StaffController {
 
     // ------------------ DEPENDENCY SETUP ------------------ //
 
-    private final StaffEntity staffEntity;
+    private final StaffService staffService;
 
-    public StaffController(StaffEntity staffEntity){
-        this.staffEntity = staffEntity;
+    public StaffController(StaffService staffService){
+        this.staffService = staffService;
     }
 
     // ------------------ CONTROLLERS ------------------ //

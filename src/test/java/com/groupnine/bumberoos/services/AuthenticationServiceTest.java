@@ -15,6 +15,9 @@ import org.junit.jupiter.api.extension.TestWatcher;
 import org.junit.jupiter.api.function.Executable;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.ArrayList;
@@ -71,6 +74,9 @@ class AuthenticationServiceTest {
     @Mock
     private StaffService staffService;
 
+    @Spy
+    private PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
     @InjectMocks
     private AuthenticationService authenticationService;
 
@@ -78,6 +84,10 @@ class AuthenticationServiceTest {
 
     private static final String ADMIN_EMAIL = "admin@bumberoos.com";
     private static final String ADMIN_PASSWORD = "secret123";
+
+    private String hash(String raw) {
+        return passwordEncoder.encode(raw);
+    }
 
     /** Regular staff member: not an admin, no credentials. */
     private StaffEntity regularStaff() {
@@ -97,7 +107,7 @@ class AuthenticationServiceTest {
                 new ArrayList<>(),
                 new ArrayList<>()
         );
-        admin.setAdminCredentials("Admin@Bumberoos.com", ADMIN_PASSWORD);
+        admin.setAdminCredentials("Admin@Bumberoos.com", hash(ADMIN_PASSWORD));
         return admin;
     }
 
@@ -109,7 +119,7 @@ class AuthenticationServiceTest {
                 new ArrayList<>(),
                 new ArrayList<>()
         );
-        admin.setAdminCredentials("jose@bumberoos.com", "other456");
+        admin.setAdminCredentials("jose@bumberoos.com", hash("other456"));
         return admin;
     }
 
@@ -134,7 +144,7 @@ class AuthenticationServiceTest {
     private StaffEntity regularStaffWithCredentials() {
         StaffEntity staff = regularStaff();
         staff.setEmail(ADMIN_EMAIL);
-        staff.setPassword(ADMIN_PASSWORD);
+        staff.setPassword(hash(ADMIN_PASSWORD));
         return staff;
     }
 

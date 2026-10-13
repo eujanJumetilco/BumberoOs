@@ -1,122 +1,86 @@
 package com.groupnine.bumberoos.services;
 
-import com.groupnine.bumberoos.domain.exceptions.InvalidInventoryExceptions;
-
 import com.groupnine.bumberoos.domain.entities.ItemEntity;
+import com.groupnine.bumberoos.domain.enums.ItemCondition;
+import com.groupnine.bumberoos.domain.exceptions.InvalidInventoryExceptions;
+import com.groupnine.bumberoos.repositories.ItemRepository;
 import org.springframework.stereotype.Service;
-import com.groupnine.bumberoos.util.TextStorageUtil;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
-
+import java.util.List;
+import java.util.Optional;
 
 @Service
+@Transactional(rollbackFor = Exception.class)
 public class InventoryService {
 
-    private static final String FILE_NAME = "data/inventory_data.txt";
+    private final ItemRepository itemRepository;
 
-    private final ArrayList<ItemEntity> inventory = new ArrayList<>();
-    private int nextId = 1;
-
-    public InventoryService() {
-        ArrayList<ItemEntity> loaded = TextStorageUtil.loadInventoryFromTextFile(FILE_NAME);
-        inventory.addAll(loaded);
-
-        for (ItemEntity i : inventory) {
-            if (i.getId() >= nextId) {
-                nextId = i.getId() + 1;
-            }
-        }
-    }
-
-    public void saveAll() {
-        TextStorageUtil.saveInventoryToTextFile(inventory, FILE_NAME);
-    }
-
-    public int getNextId() {
-        return nextId;
+    public InventoryService(ItemRepository itemRepository) {
+        this.itemRepository = itemRepository;
     }
 
     public ItemEntity addItem(ItemEntity item) throws InvalidInventoryExceptions {
-
         if (item.getName() == null || item.getName().isBlank()) {
-            throw new InvalidInventoryExceptions(
-                "Item name cannot be blank."
-            );
+            throw new InvalidInventoryExceptions("Item name cannot be blank.");
         }
-
         if (item.getQuantity() < 0) {
-            throw new InvalidInventoryExceptions(
-                "Quantity cannot be negative."
-            );
+            throw new InvalidInventoryExceptions("Quantity cannot be negative.");
         }
 
-        item.setId(nextId++);
-        inventory.add(item);
-        saveAll();
-
-        return item;
+        item.setId(null);
+        return itemRepository.save(item);
     }
 
-    public boolean removeItem(int id) {
-        boolean removed = inventory.removeIf(i -> i.getId() == id);
-
-        if (removed) {
-            saveAll();
-        }
-
-        return removed;
+    /** @return true if found and removed, false otherwise. */
+    public boolean removeItem(Long id) {
+        if (!itemRepository.existsById(id)) return false;
+        itemRepository.deleteById(id);
+        return true;
     }
 
-    public ItemEntity editItem(
-            int id,
+    /** Null arguments leave the existing value unchanged. */
+    public Optional<ItemEntity> editItem(
+            Long id,
             String name,
             String description,
-            int quantity,
-            int conditionCode,
+            Integer quantity,
+            ItemCondition condition,
             LocalDate lastMaintained
     ) {
-        ItemEntity item = findById(id);
-        if (item == null) return null;
-
-        if (name          != null) item.setName(name);
-        if (description   != null) item.setDescription(description);
-        if (quantity      >= 0)    item.setQuantity(quantity);
-        if (conditionCode >= 0)    item.setItemCondition(conditionCode);
-        if (lastMaintained!= null) item.setLastMaintained(lastMaintained);
-
-        saveAll();
-        return item;
+        return itemRepository.findById(id).map(item -> {
+            if (name != null) item.setName(name);
+            if (description != null) item.setDescription(description);
+            if (quantity != null) item.setQuantity(quantity);
+            if (condition != null) item.setItemCondition(condition);
+            if (lastMaintained != null) item.setLastMaintained(lastMaintained);
+            item.normalize();
+            return itemRepository.save(item);
+        });
     }
 
-    public ItemEntity findById(int id) {
-        return inventory.stream()
-                .filter(i -> i.getId() == id)
-                .findFirst()
-                .orElse(null);
+    @Transactional(readOnly = true)
+    public Optional<ItemEntity> findById(Long id) {
+        return itemRepository.findById(id);
     }
 
-    public ItemEntity findByName(String name) {
-        if (name == null) {
-            return null;
-        }
-        return inventory.stream()
-                .filter(i -> i.getName() != null && i.getName().equalsIgnoreCase(name))
-                .findFirst()
-                .orElse(null);
+    @Transactional(readOnly = true)
+    public Optional<ItemEntity> findByName(String name) {
+        if (name == null) return Optional.empty();
+        return itemRepository.findFirstByNameIgnoreCase(name);
     }
 
-    public ItemEntity increaseQuantity(int id, int additionalQty) {
-        ItemEntity item = findById(id);
-        if (item == null) {
-            return null;
-        }
-        item.setQuantity(item.getQuantity() + additionalQty);
-        saveAll();
-        return item;
+    public Optional<ItemEntity> increaseQuantity(Long id, int additionalQty) {
+        return itemRepository.findById(id).map(item -> {
+            item.setQuantity(item.getQuantity() + additionalQty);
+            item.normalize();
+            return itemRepository.save(item);
+        });
     }
 
-    public ArrayList<ItemEntity> getAllItems() {
-        return new ArrayList<>(inventory);
+    @Transactional(readOnly = true)
+    public List<ItemEntity> getAllItems() {
+        return itemRepository.findAll();
     }
 }

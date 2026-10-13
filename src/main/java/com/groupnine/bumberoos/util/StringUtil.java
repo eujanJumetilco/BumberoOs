@@ -1,6 +1,7 @@
 package com.groupnine.bumberoos.util;
 
 import java.util.ArrayList;
+import java.util.List;
 
 public final class StringUtil {
 
@@ -65,7 +66,7 @@ public final class StringUtil {
         return hasLeadingPlus ? "+" + digitsOnly : digitsOnly;
     }
 
-    public static ArrayList<String> cleanList(ArrayList<String> input) {
+    public static ArrayList<String> cleanList(List<String> input) {
         ArrayList<String> result = new ArrayList<>();
         if (input == null) {
             return result;

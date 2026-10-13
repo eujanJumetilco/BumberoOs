@@ -11,5 +11,4 @@ public class BumberoosApplication {
 		SpringApplication.run(BumberoosApplication.class, args);
 	}
 
-
 }
