@@ -1,6 +1,7 @@
 package com.groupnine.bumberoos.services;
 
 import com.groupnine.bumberoos.domain.entities.IncidentEntity;
+import com.groupnine.bumberoos.domain.entities.StaffEntity;
 import com.groupnine.bumberoos.domain.enums.IncidentSeverityLevel;
 import com.groupnine.bumberoos.domain.enums.IncidentStatus;
 import com.groupnine.bumberoos.repositories.IncidentRepository;
