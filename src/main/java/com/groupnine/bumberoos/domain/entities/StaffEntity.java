@@ -72,7 +72,21 @@ public class StaffEntity {
         role = StringUtil.toTitleCase(role);
         contactNumber = StringUtil.normalizePhoneNumber(contactNumber);
         address = StringUtil.capitalizeFirstLetter(address);
-        trainings = StringUtil.cleanList(trainings);
-        certifications = StringUtil.cleanList(certifications);
+        trainings = cleaned(trainings);
+        certifications = cleaned(certifications);
+    }
+
+    /**
+     * Cleans in place when the list is already managed: swapping a Hibernate collection for a plain
+     * list inside a lifecycle callback breaks the flush. Untouched when nothing needs cleaning.
+     */
+    private static List<String> cleaned(List<String> current) {
+        List<String> cleaned = StringUtil.cleanList(current);
+        if (current == null) return cleaned;
+        if (!current.equals(cleaned)) {
+            current.clear();
+            current.addAll(cleaned);
+        }
+        return current;
     }
 }

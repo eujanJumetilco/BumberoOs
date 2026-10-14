@@ -1,5 +1,6 @@
 package com.groupnine.bumberoos.dto;
 
+import com.groupnine.bumberoos.domain.enums.ItemCategory;
 import com.groupnine.bumberoos.domain.enums.ItemCondition;
 import jakarta.validation.constraints.Min;
 
@@ -11,5 +12,7 @@ public record ItemUpdateRequest(
         String description,
         @Min(0) Integer quantity,
         ItemCondition condition,
-        LocalDate lastMaintained
+        LocalDate lastMaintained,
+        ItemCategory category,
+        String serialNumber
 ) {}

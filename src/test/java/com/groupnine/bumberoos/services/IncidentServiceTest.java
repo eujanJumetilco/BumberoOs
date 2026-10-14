@@ -1,7 +1,8 @@
 package com.groupnine.bumberoos.services;
 
 import com.groupnine.bumberoos.domain.entities.IncidentEntity;
-import com.groupnine.bumberoos.domain.enums.IncidentSeverityLevel;
+import com.groupnine.bumberoos.domain.enums.AlarmLevel;
+import com.groupnine.bumberoos.domain.enums.IncidentNature;
 import com.groupnine.bumberoos.domain.enums.IncidentStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,13 +20,16 @@ class IncidentServiceTest {
     @Autowired
     private IncidentService service;
 
-    // Helper: adds a LOW / ONGOING incident
+    // Helper: adds an EMERGENCY / ONGOING incident
     private IncidentEntity addSample() {
         return service.addIncident(new IncidentEntity(
-                IncidentSeverityLevel.LOW, IncidentStatus.ONGOING,
-                "house fire", "brgy. san antonio",
+                IncidentNature.EMERGENCY, "house fire", "brgy. san antonio",
                 LocalDateTime.now(), "juan dela cruz"
         ));
+    }
+
+    private IncidentEntity edit(Long id, IncidentNature nature, AlarmLevel alarm, String location) {
+        return service.editIncident(id, nature, alarm, null, location, null, null, null, null, null).orElseThrow();
     }
 
     @Test
@@ -34,8 +38,9 @@ class IncidentServiceTest {
 
         assertNotNull(added.getId());
         assertEquals("House Fire", added.getIncidentType());
-        assertEquals(IncidentSeverityLevel.LOW, added.getSeverityLevel());
+        assertEquals(IncidentNature.EMERGENCY, added.getNature());
         assertEquals(IncidentStatus.ONGOING, added.getStatus());
+        assertNull(added.getSeverityLevel(), "severity is optional now");
         assertTrue(service.findById(added.getId()).isPresent());
     }
 
@@ -54,12 +59,9 @@ class IncidentServiceTest {
         IncidentEntity added = addSample();
 
         IncidentEntity edited = service.editIncident(
-                added.getId(), IncidentSeverityLevel.CRITICAL, IncidentStatus.PENDING,
-                "structural fire", null, null, null
+                added.getId(), null, null, "structural fire", null, null, null, null, null, null
         ).orElseThrow();
 
-        assertEquals(IncidentSeverityLevel.CRITICAL, edited.getSeverityLevel());
-        assertEquals(IncidentStatus.PENDING, edited.getStatus());
         assertEquals("Structural Fire", edited.getIncidentType());
     }
 
@@ -71,10 +73,10 @@ class IncidentServiceTest {
         LocalDateTime originalDate = added.getDateTimeReported();
 
         IncidentEntity edited = service.editIncident(
-                added.getId(), null, null, null, null, null, null
+                added.getId(), null, null, null, null, null, null, null, null, null
         ).orElseThrow();
 
-        assertEquals(IncidentSeverityLevel.LOW, edited.getSeverityLevel());
+        assertEquals(IncidentNature.EMERGENCY, edited.getNature());
         assertEquals(IncidentStatus.ONGOING, edited.getStatus());
         assertEquals(originalLocation, edited.getLocation());
         assertEquals(originalReporter, edited.getReportedBy());
@@ -83,7 +85,20 @@ class IncidentServiceTest {
 
     @Test
     void editIncident_returnsEmptyForUnknownId() {
-        assertTrue(service.editIncident(-999L, null, null, null, null, null, null).isEmpty());
+        assertTrue(service.editIncident(-999L, null, null, null, null, null, null, null, null, null).isEmpty());
+    }
+
+    @Test
+    void editIncident_alarmEscalationIsPersistedInHistory() {
+        IncidentEntity added = addSample();
+
+        edit(added.getId(), null, AlarmLevel.FIRST_ALARM, null);
+        edit(added.getId(), null, AlarmLevel.SECOND_ALARM, null);
+
+        IncidentEntity reloaded = service.findById(added.getId()).orElseThrow();
+        assertEquals(AlarmLevel.SECOND_ALARM, reloaded.getAlarmLevel());
+        assertEquals(2, reloaded.getAlarmEvents().size());
+        assertEquals(AlarmLevel.FIRST_ALARM, reloaded.getAlarmEvents().get(0).getAlarmLevel());
     }
 
     @Test
@@ -95,16 +110,18 @@ class IncidentServiceTest {
     }
 
     @Test
-    void removeIncident_removesExistingAndReturnsFalseAfterwards() {
-        IncidentEntity added = addSample();
+    void getIncidents_filtersByStatusAndNature() {
+        IncidentEntity emergency = addSample();
+        IncidentEntity standby = service.addIncident(new IncidentEntity(
+                IncidentNature.NON_EMERGENCY, "standby", "plaza", LocalDateTime.now(), "chief"));
 
-        assertTrue(service.removeIncident(added.getId()));
-        assertTrue(service.findById(added.getId()).isEmpty());
-        assertFalse(service.removeIncident(added.getId()));
-    }
+        var ongoingNonEmergency = service.getIncidents(IncidentStatus.ONGOING, IncidentNature.NON_EMERGENCY);
 
-    @Test
-    void removeIncident_returnsFalseForUnknownId() {
-        assertFalse(service.removeIncident(-999L));
+        assertTrue(ongoingNonEmergency.stream().anyMatch(i -> i.getId().equals(standby.getId())));
+        assertTrue(ongoingNonEmergency.stream().noneMatch(i -> i.getId().equals(emergency.getId())));
+        assertTrue(service.getIncidents(IncidentStatus.RESOLVED, null).stream()
+                .noneMatch(i -> i.getId().equals(emergency.getId())));
+        assertTrue(service.getIncidents(null, IncidentNature.EMERGENCY).stream()
+                .anyMatch(i -> i.getId().equals(emergency.getId())));
     }
 }

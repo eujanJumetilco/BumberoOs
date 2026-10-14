@@ -1,5 +1,6 @@
 package com.groupnine.bumberoos.controllers;
 
+import com.groupnine.bumberoos.domain.enums.ItemCategory;
 import com.groupnine.bumberoos.domain.exceptions.InvalidInventoryExceptions;
 import com.groupnine.bumberoos.dto.ItemRequest;
 import com.groupnine.bumberoos.dto.ItemResponse;
@@ -30,8 +31,11 @@ public class InventoryController {
     // ------------------ CONTROLLERS ------------------ //
 
     @GetMapping
-    public List<ItemResponse> getAll() {
-        return itemMapper.toResponses(inventoryService.getAllItems());
+    public List<ItemResponse> getAll(
+            @RequestParam(required = false) ItemCategory category,
+            @RequestParam(defaultValue = "false") boolean availableOnly
+    ) {
+        return itemMapper.toResponses(inventoryService.getItems(category, availableOnly));
     }
 
     @GetMapping("/{id}")
@@ -55,7 +59,7 @@ public class InventoryController {
     @PatchMapping("/{id}")
     public ItemResponse edit(@PathVariable Long id, @Valid @RequestBody ItemUpdateRequest r) {
         return inventoryService.editItem(id, r.name(), r.description(), r.quantity(),
-                        r.condition(), r.lastMaintained())
+                        r.condition(), r.lastMaintained(), r.category(), r.serialNumber())
                 .map(itemMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }

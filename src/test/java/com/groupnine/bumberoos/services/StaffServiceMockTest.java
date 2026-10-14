@@ -2,7 +2,10 @@ package com.groupnine.bumberoos.services;
 
 import com.groupnine.bumberoos.domain.entities.StaffEntity;
 import com.groupnine.bumberoos.domain.enums.StaffAvailability;
+import com.groupnine.bumberoos.domain.exceptions.ConflictException;
+import com.groupnine.bumberoos.repositories.IncidentStaffAssignmentRepository;
 import com.groupnine.bumberoos.repositories.StaffRepository;
+import com.groupnine.bumberoos.repositories.UserAccountRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -23,6 +26,12 @@ class StaffServiceMockTest {
 
     @Mock
     private StaffRepository staffRepository;
+
+    @Mock
+    private IncidentStaffAssignmentRepository assignmentRepository;
+
+    @Mock
+    private UserAccountRepository userAccountRepository;
 
     @InjectMocks
     private StaffService service;
@@ -52,7 +61,7 @@ class StaffServiceMockTest {
 
     @Test
     void removeStaff_deletesWhenExists() {
-        when(staffRepository.existsById(1L)).thenReturn(true);
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(mockStaff(1L)));
 
         assertTrue(service.removeStaff(1L));
         verify(staffRepository).deleteById(1L);
@@ -60,7 +69,7 @@ class StaffServiceMockTest {
 
     @Test
     void removeStaff_returnsFalseAndDeletesNothingWhenMissing() {
-        when(staffRepository.existsById(5L)).thenReturn(false);
+        when(staffRepository.findById(5L)).thenReturn(Optional.empty());
 
         assertFalse(service.removeStaff(5L));
         verify(staffRepository, never()).deleteById(any());
@@ -109,5 +118,90 @@ class StaffServiceMockTest {
         when(staffRepository.findAll()).thenReturn(List.of(mockStaff(1L), mockStaff(2L)));
 
         assertEquals(2, service.getStaffList().size());
+    }
+
+    // ===== DISPATCH-AWARE RULES ===== //
+
+    @Test
+    void removeStaff_blockedWhenAssignmentHistoryExists() {
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(mockStaff(1L)));
+        when(assignmentRepository.existsByStaffId(1L)).thenReturn(true);
+
+        assertThrows(ConflictException.class, () -> service.removeStaff(1L));
+        verify(staffRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void removeStaff_blockedWhenLinkedToAccount() {
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(mockStaff(1L)));
+        when(userAccountRepository.existsByStaffId(1L)).thenReturn(true);
+
+        assertThrows(ConflictException.class, () -> service.removeStaff(1L));
+        verify(staffRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void editStaff_manualDispatchedIsRejected() {
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(mockStaff(1L)));
+
+        assertThrows(ConflictException.class, () -> service.editStaff(
+                1L, null, null, null, null, null, null, null, StaffAvailability.DISPATCHED));
+        verify(staffRepository, never()).save(any());
+    }
+
+    @Test
+    void editStaff_availabilityChangeBlockedWhileAssigned() {
+        StaffEntity staff = mockStaff(1L);
+        staff.setStaffAvailability(StaffAvailability.DISPATCHED);
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(staff));
+        when(assignmentRepository.existsByStaffIdAndReleasedAtIsNull(1L)).thenReturn(true);
+
+        assertThrows(ConflictException.class, () -> service.editStaff(
+                1L, null, null, null, null, null, null, null, StaffAvailability.AVAILABLE));
+        assertEquals(StaffAvailability.DISPATCHED, staff.getStaffAvailability());
+    }
+
+    @Test
+    void editStaff_sameAvailabilityWhileAssignedIsHarmless() {
+        StaffEntity staff = mockStaff(1L);
+        staff.setStaffAvailability(StaffAvailability.DISPATCHED);
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(staff));
+        when(staffRepository.save(staff)).thenReturn(staff);
+
+        assertDoesNotThrow(() -> service.editStaff(
+                1L, "renamed", null, null, null, null, null, null, StaffAvailability.DISPATCHED));
+    }
+
+    @Test
+    void editStaff_cannotMarkDispatchedStaffNotEmployed() {
+        StaffEntity staff = mockStaff(1L);
+        staff.setStaffAvailability(StaffAvailability.DISPATCHED);
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(staff));
+
+        assertThrows(ConflictException.class, () -> service.editStaff(
+                1L, null, null, null, null, false, null, null, null));
+        assertTrue(staff.isEmployed());
+    }
+
+    @Test
+    void editStaff_availableToUnavailableAllowedWhenNotAssigned() {
+        StaffEntity staff = mockStaff(1L);
+        staff.setStaffAvailability(StaffAvailability.AVAILABLE);
+        when(staffRepository.findById(1L)).thenReturn(Optional.of(staff));
+        when(staffRepository.save(staff)).thenReturn(staff);
+
+        StaffEntity edited = service.editStaff(
+                1L, null, null, null, null, null, null, null, StaffAvailability.UNAVAILABLE).orElseThrow();
+
+        assertEquals(StaffAvailability.UNAVAILABLE, edited.getStaffAvailability());
+    }
+
+    @Test
+    void getStaffList_filtersByAvailability() {
+        service.getStaffList(null);
+        service.getStaffList(StaffAvailability.AVAILABLE);
+
+        verify(staffRepository).findAll();
+        verify(staffRepository).findByStaffAvailability(StaffAvailability.AVAILABLE);
     }
 }

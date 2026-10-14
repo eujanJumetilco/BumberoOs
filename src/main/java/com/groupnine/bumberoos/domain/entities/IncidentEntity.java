@@ -1,5 +1,7 @@
 package com.groupnine.bumberoos.domain.entities;
 
+import com.groupnine.bumberoos.domain.enums.AlarmLevel;
+import com.groupnine.bumberoos.domain.enums.IncidentNature;
 import com.groupnine.bumberoos.domain.enums.IncidentSeverityLevel;
 import com.groupnine.bumberoos.domain.enums.IncidentStatus;
 import com.groupnine.bumberoos.util.StringUtil;
@@ -25,32 +27,45 @@ public class IncidentEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private IncidentSeverityLevel severityLevel;
+    private IncidentNature nature;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private IncidentStatus status;
+    private IncidentStatus status = IncidentStatus.ONGOING;
+
+    /** Only meaningful when {@link #nature} is EMERGENCY. */
+    @Enumerated(EnumType.STRING)
+    private AlarmLevel alarmLevel;
+
+    /** @deprecated superseded by {@link #alarmLevel}. */
+    @Deprecated
+    @Enumerated(EnumType.STRING)
+    private IncidentSeverityLevel severityLevel;
 
     private String incidentType;
     private String location;
     private LocalDateTime dateTimeReported;
     private String reportedBy;
 
-    @ManyToMany
-    @JoinTable(
-            name = "incident_deployed_staff",
-            joinColumns = @JoinColumn(name = "incident_id"),
-            inverseJoinColumns = @JoinColumn(name = "staff_id")
-    )
-    private List<StaffEntity> deployedStaff = new ArrayList<>();
+    private LocalDateTime underControlAt;
+    private LocalDateTime fireOutAt;
+    private LocalDateTime resolvedAt;
+
+    @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<IncidentStaffAssignment> staffAssignments = new ArrayList<>();
+
+    @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<IncidentItemAssignment> itemAssignments = new ArrayList<>();
+
+    @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("raisedAt ASC, id ASC")
+    private List<IncidentAlarmEvent> alarmEvents = new ArrayList<>();
 
     public IncidentEntity(
-            IncidentSeverityLevel severityLevel, IncidentStatus status,
-            String incidentType, String location,
+            IncidentNature nature, String incidentType, String location,
             LocalDateTime dateTimeReported, String reportedBy
     ) {
-        this.severityLevel = severityLevel;
-        this.status = status;
+        this.nature = nature;
         this.incidentType = incidentType;
         this.location = location;
         this.dateTimeReported = dateTimeReported;

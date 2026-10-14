@@ -13,14 +13,17 @@ public class ItemMapper {
     public ItemEntity toEntity(ItemRequest request) {
         return new ItemEntity(
                 request.condition(), request.name(),
-                request.description(), request.quantity()
+                request.description(), request.quantity(),
+                request.category(), request.serialNumber()
         );
     }
 
     public ItemResponse toResponse(ItemEntity item) {
         return new ItemResponse(
                 item.getId(), item.getName(), item.getDescription(),
-                item.getQuantity(), item.getItemCondition(), item.getLastMaintained()
+                item.getQuantity(), item.getItemCondition(), item.getLastMaintained(),
+                item.getCategory(), item.getSerialNumber(),
+                item.getQuantityDispatched(), item.getQuantityAvailable(), item.getAvailability()
         );
     }
 

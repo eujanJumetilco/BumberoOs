@@ -1,9 +1,13 @@
 package com.groupnine.bumberoos.services;
 
+import com.groupnine.bumberoos.domain.entities.IncidentAlarmEvent;
 import com.groupnine.bumberoos.domain.entities.IncidentEntity;
-import com.groupnine.bumberoos.domain.entities.StaffEntity;
+import com.groupnine.bumberoos.domain.enums.AlarmLevel;
+import com.groupnine.bumberoos.domain.enums.IncidentNature;
 import com.groupnine.bumberoos.domain.enums.IncidentSeverityLevel;
 import com.groupnine.bumberoos.domain.enums.IncidentStatus;
+import com.groupnine.bumberoos.domain.exceptions.BadRequestException;
+import com.groupnine.bumberoos.domain.exceptions.ConflictException;
 import com.groupnine.bumberoos.repositories.IncidentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +16,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Plain incident CRUD. Assigning staff/items, resolving, reopening and deleting live in
+ * {@link DispatchService}, because they must keep staff and item availability in sync.
+ */
 @Service
 @Transactional
 public class IncidentService {
@@ -24,59 +32,69 @@ public class IncidentService {
 
     // =====> ADD <===== //
 
+    /** Always starts ONGOING. Records the first alarm event when an alarm level is given. */
     public IncidentEntity addIncident(IncidentEntity incident) {
         incident.setId(null);
+        incident.setStatus(IncidentStatus.ONGOING);
+        if (incident.getAlarmLevel() != null && incident.getNature() != IncidentNature.EMERGENCY) {
+            throw new BadRequestException("alarmLevel can only be set on an EMERGENCY incident");
+        }
+        if (incident.getAlarmLevel() != null) {
+            incident.getAlarmEvents().add(new IncidentAlarmEvent(incident, incident.getAlarmLevel(), LocalDateTime.now()));
+        }
         return incidentRepository.save(incident);
-    }
-
-    // =====> REMOVE <===== //
-
-    /** @return true if found and removed, false otherwise. */
-    public boolean removeIncident(Long id) {
-        if (!incidentRepository.existsById(id)) return false;
-        incidentRepository.deleteById(id);
-        return true;
     }
 
     // =====> EDIT <===== //
 
-    /** Null arguments leave the existing value unchanged. */
+    /**
+     * Null arguments leave the existing value unchanged. Status is deliberately not editable here.
+     *
+     * @throws ConflictException   when changing nature/alarm level of a RESOLVED incident
+     * @throws BadRequestException when an alarm level is supplied for a NON_EMERGENCY result
+     */
+    @SuppressWarnings("deprecation")
     public Optional<IncidentEntity> editIncident(
             Long id,
-            IncidentSeverityLevel severityLevel,
-            IncidentStatus status,
+            IncidentNature nature,
+            AlarmLevel alarmLevel,
             String incidentType,
             String location,
             LocalDateTime dateTimeReported,
-            String reportedBy
+            String reportedBy,
+            LocalDateTime underControlAt,
+            LocalDateTime fireOutAt,
+            IncidentSeverityLevel severityLevel
     ) {
         return incidentRepository.findById(id).map(incident -> {
-            if (severityLevel != null) incident.setSeverityLevel(severityLevel);
-            if (status != null) incident.setStatus(status);
+            boolean natureChanging = nature != null && nature != incident.getNature();
+            boolean alarmChanging = alarmLevel != null && alarmLevel != incident.getAlarmLevel();
+
+            if (incident.getStatus() == IncidentStatus.RESOLVED && (natureChanging || alarmChanging)) {
+                throw new ConflictException("incident " + id + " is RESOLVED; reopen it to change nature or alarm level");
+            }
+
+            IncidentNature resultingNature = nature != null ? nature : incident.getNature();
+            if (resultingNature == IncidentNature.NON_EMERGENCY && alarmLevel != null) {
+                throw new BadRequestException("alarmLevel can only be set on an EMERGENCY incident");
+            }
+
+            if (natureChanging) {
+                incident.setNature(nature);
+                if (nature == IncidentNature.NON_EMERGENCY) incident.setAlarmLevel(null);
+            }
+            if (alarmChanging) {
+                incident.setAlarmLevel(alarmLevel);
+                incident.getAlarmEvents().add(new IncidentAlarmEvent(incident, alarmLevel, LocalDateTime.now()));
+            }
             if (incidentType != null) incident.setIncidentType(incidentType);
             if (location != null) incident.setLocation(location);
             if (dateTimeReported != null) incident.setDateTimeReported(dateTimeReported);
             if (reportedBy != null) incident.setReportedBy(reportedBy);
+            if (underControlAt != null) incident.setUnderControlAt(underControlAt);
+            if (fireOutAt != null) incident.setFireOutAt(fireOutAt);
+            if (severityLevel != null) incident.setSeverityLevel(severityLevel);
             incident.normalize();
-            return incidentRepository.save(incident);
-        });
-    }
-
-    // =====> STAFF DEPLOYMENT <===== //
-
-    /** Deploying an already-deployed staff member is a no-op. */
-    public Optional<IncidentEntity> deployStaff(Long incidentId, StaffEntity staff) {
-        return incidentRepository.findById(incidentId).map(incident -> {
-            boolean alreadyDeployed = incident.getDeployedStaff().stream()
-                    .anyMatch(s -> s.getId().equals(staff.getId()));
-            if (!alreadyDeployed) incident.getDeployedStaff().add(staff);
-            return incidentRepository.save(incident);
-        });
-    }
-
-    public Optional<IncidentEntity> undeployStaff(Long incidentId, Long staffId) {
-        return incidentRepository.findById(incidentId).map(incident -> {
-            incident.getDeployedStaff().removeIf(s -> s.getId().equals(staffId));
             return incidentRepository.save(incident);
         });
     }
@@ -90,6 +108,15 @@ public class IncidentService {
 
     @Transactional(readOnly = true)
     public List<IncidentEntity> getAllIncidents() {
+        return incidentRepository.findAll();
+    }
+
+    /** Both filters are optional. */
+    @Transactional(readOnly = true)
+    public List<IncidentEntity> getIncidents(IncidentStatus status, IncidentNature nature) {
+        if (status != null && nature != null) return incidentRepository.findByStatusAndNature(status, nature);
+        if (status != null) return incidentRepository.findByStatus(status);
+        if (nature != null) return incidentRepository.findByNature(nature);
         return incidentRepository.findAll();
     }
 }

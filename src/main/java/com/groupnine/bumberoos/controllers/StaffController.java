@@ -1,5 +1,6 @@
 package com.groupnine.bumberoos.controllers;
 
+import com.groupnine.bumberoos.domain.enums.StaffAvailability;
 import com.groupnine.bumberoos.dto.StaffRequest;
 import com.groupnine.bumberoos.dto.StaffResponse;
 import com.groupnine.bumberoos.dto.StaffUpdateRequest;
@@ -29,8 +30,8 @@ public class StaffController {
     // ------------------ CONTROLLERS ------------------ //
 
     @GetMapping
-    public List<StaffResponse> getAll() {
-        return staffMapper.toResponses(staffService.getStaffList());
+    public List<StaffResponse> getAll(@RequestParam(required = false) StaffAvailability availability) {
+        return staffMapper.toResponses(staffService.getStaffList(availability));
     }
 
     @GetMapping("/{id}")

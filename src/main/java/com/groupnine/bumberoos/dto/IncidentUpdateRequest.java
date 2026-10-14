@@ -1,16 +1,20 @@
 package com.groupnine.bumberoos.dto;
 
+import com.groupnine.bumberoos.domain.enums.AlarmLevel;
+import com.groupnine.bumberoos.domain.enums.IncidentNature;
 import com.groupnine.bumberoos.domain.enums.IncidentSeverityLevel;
-import com.groupnine.bumberoos.domain.enums.IncidentStatus;
 
 import java.time.LocalDateTime;
 
-/** Partial update: any null field is left unchanged. */
+/** Partial update: any null field is left unchanged. Status changes go through resolve/reopen. */
 public record IncidentUpdateRequest(
-        IncidentSeverityLevel severityLevel,
-        IncidentStatus status,
+        IncidentNature nature,
+        AlarmLevel alarmLevel,
         String incidentType,
         String location,
+        String reportedBy,
         LocalDateTime dateTimeReported,
-        String reportedBy
+        LocalDateTime underControlAt,
+        LocalDateTime fireOutAt,
+        @Deprecated IncidentSeverityLevel severityLevel
 ) {}

@@ -13,4 +13,6 @@ public interface UserAccountRepository extends JpaRepository<UserAccountEntity, 
     boolean existsByEmailIgnoreCase(String email);
 
     boolean existsByRoleAndEnabledTrue(UserRole role);
+
+    boolean existsByStaffId(Long staffId);
 }

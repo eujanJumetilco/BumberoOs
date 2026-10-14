@@ -98,7 +98,7 @@ class InventoryServiceTest {
 
         ItemEntity edited = service.editItem(
                 added.getId(), "rescue hose", "updated description", 10,
-                ItemCondition.DAMAGED, today
+                ItemCondition.DAMAGED, today, null, null
         ).orElseThrow();
 
         assertEquals("Rescue Hose", edited.getName());
@@ -114,7 +114,7 @@ class InventoryServiceTest {
         String originalName = added.getName();
         String originalDescription = added.getDescription();
 
-        ItemEntity edited = service.editItem(added.getId(), null, null, null, null, null)
+        ItemEntity edited = service.editItem(added.getId(), null, null, null, null, null, null, null)
                 .orElseThrow();
 
         assertEquals(originalName, edited.getName());
@@ -126,7 +126,7 @@ class InventoryServiceTest {
 
     @Test
     void editItem_returnsEmptyForUnknownId() {
-        assertTrue(service.editItem(-999L, null, null, null, null, null).isEmpty());
+        assertTrue(service.editItem(-999L, null, null, null, null, null, null, null).isEmpty());
     }
 
     // ===== INCREASE QUANTITY ===== //

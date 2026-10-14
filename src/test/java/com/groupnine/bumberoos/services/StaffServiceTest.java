@@ -2,6 +2,9 @@ package com.groupnine.bumberoos.services;
 
 import com.groupnine.bumberoos.domain.entities.StaffEntity;
 import com.groupnine.bumberoos.domain.enums.StaffAvailability;
+import com.groupnine.bumberoos.domain.enums.UserRole;
+import com.groupnine.bumberoos.domain.entities.UserAccountEntity;
+import com.groupnine.bumberoos.domain.exceptions.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,6 +21,9 @@ class StaffServiceTest {
 
     @Autowired
     private StaffService service;
+
+    @Autowired
+    private UserAccountService accountService;
 
     private StaffEntity sample() {
         return new StaffEntity(
@@ -51,13 +57,13 @@ class StaffServiceTest {
 
         StaffEntity edited = service.editStaff(
                 added.getId(), "new name", null, null, null, false,
-                null, null, StaffAvailability.DISPATCHED
+                null, null, StaffAvailability.AVAILABLE
         ).orElseThrow();
 
         assertEquals("New Name", edited.getName());
         assertEquals("Driver", edited.getRole());
         assertFalse(edited.isEmployed());
-        assertEquals(StaffAvailability.DISPATCHED, edited.getStaffAvailability());
+        assertEquals(StaffAvailability.AVAILABLE, edited.getStaffAvailability());
     }
 
     @Test
@@ -74,4 +80,37 @@ class StaffServiceTest {
         assertFalse(service.removeStaff(added.getId()));
     }
 
+    @Test
+    void editStaff_manualDispatchedIsRejected() {
+        StaffEntity added = service.addStaff(sample());
+
+        assertThrows(ConflictException.class, () -> service.editStaff(
+                added.getId(), null, null, null, null, null, null, null, StaffAvailability.DISPATCHED));
+    }
+
+    @Test
+    void getStaffList_filtersByAvailability() {
+        StaffEntity available = service.addStaff(sample());
+        service.editStaff(available.getId(), null, null, null, null, null, null, null, StaffAvailability.AVAILABLE);
+        StaffEntity unavailable = service.addStaff(sample());
+
+        var result = service.getStaffList(StaffAvailability.AVAILABLE);
+
+        assertTrue(result.stream().anyMatch(s -> s.getId().equals(available.getId())));
+        assertTrue(result.stream().noneMatch(s -> s.getId().equals(unavailable.getId())));
+        assertTrue(service.getStaffList((StaffAvailability) null).size() >= 2);
+    }
+
+    @Test
+    void removeStaff_blockedWhileLinkedToAnAccount() {
+        StaffEntity added = service.addStaff(sample());
+        UserAccountEntity account = accountService.addAccount(
+                new UserAccountEntity("linked@bumberoos.com", "hash", UserRole.DISPATCHER, "linked"));
+        accountService.linkStaff(account.getId(), added);
+
+        assertThrows(ConflictException.class, () -> service.removeStaff(added.getId()));
+
+        accountService.linkStaff(account.getId(), null);
+        assertTrue(service.removeStaff(added.getId()));
+    }
 }

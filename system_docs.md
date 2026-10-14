@@ -1,8 +1,8 @@
 # BumberoOS Server — System Documentation
 
-A Spring Boot REST API for an emergency-response back office: it manages **staff**, **incidents** (with staff deployment), **inventory items** and **login accounts**.
+A Spring Boot REST API for the back office of a volunteer fire brigade: it manages **staff**, **incidents** (with staff and equipment dispatch), **inventory items** and **login accounts**.
 
-This document describes the code as it currently exists on branch `migrationSQL` (including uncommitted changes). Section 11 lists known issues, including a current compile error.
+This document describes the code on branch `majorRevisoin` after the dispatch / status-sync / incident-classification revision (`REVISION_IMPLEMENTATION_PLAN.md`). Section 12 lists known gaps and the production migration steps.
 
 ---
 
@@ -16,11 +16,13 @@ This document describes the code as it currently exists on branch `migrationSQL`
 | Database | PostgreSQL (Neon) at runtime; H2 in-memory (PostgreSQL mode) for tests |
 | Password hashing | BCrypt via `spring-security-crypto` only (**not** full Spring Security) |
 | Boilerplate | Lombok (`@Getter`, `@Setter`, `@NoArgsConstructor`) |
-| Entry point | `BumberoosApplication` (`@SpringBootApplication`) |
-| Base API path | `/api` (server on Spring's default port 8080) |
+| Entry point | `BumberoosApplication` |
+| Base API path | `/api` (default port 8080) |
 
-### History in brief
-The project began as a plain-Java app persisting to pipe-delimited `.txt` files and binary counters, with plaintext admin passwords. It was migrated to PostgreSQL + Spring Data JPA (`current_situation_1.md` records the original plan and decisions). The text/binary storage utilities and `data/` files are gone; DTOs, mappers, REST controllers and a separate login-account model were added afterwards. `current_situation_1.md` is now **outdated** (it still describes the old file-based state).
+### What the revision added
+- **F1 — Assignments:** staff and items can be assigned when an incident is created and changed later (send more, pull some back).
+- **F2 — Status sync:** staff and items are `DISPATCHED` while assigned and return to `AVAILABLE` when released or when the incident is resolved or deleted.
+- **F3 — Classification:** every incident is `EMERGENCY` or `NON_EMERGENCY` and `ONGOING` or `RESOLVED`; emergencies may carry a BFP alarm level with an escalation history.
 
 ---
 
@@ -30,108 +32,77 @@ The project began as a plain-Java app persisting to pipe-delimited `.txt` files 
 HTTP client (JSON)
    │
    ▼
-controllers/   REST endpoints, @Valid on request DTOs, 404 via ResponseStatusException
+controllers/   REST endpoints, @Valid on request DTOs
    │
+   ├──► services/IncidentService     plain incident CRUD / PATCH / filters
+   ├──► services/DispatchService     assign / release / resolve / reopen / delete (keeps availability in sync)
+   ├──► services/StaffService, InventoryService, UserAccountService, AuthenticationService
    ▼
-mappers/       DTO <-> entity (@Component, hand-written, no MapStruct)
-   │
-   ▼
-services/      business logic, @Transactional, work with entities, return Optional/boolean
-   │
-   ▼
-repositories/  Spring Data JPA interfaces
-   │
-   ▼
-domain/entities  ->  PostgreSQL
+mappers/       DTO <-> entity (@Component, hand-written)
+repositories/  Spring Data JPA (+ pessimistic-lock queries)
+domain/entities -> PostgreSQL
 ```
 
 Rules the code follows:
 - **Entities never cross the API boundary.** Controllers take `*Request` records and return `*Response` records.
-- **Services return `Optional<Entity>` for "might not exist" and `boolean` for removes.** The controller turns an empty result into a `404`.
-- **IDs are server-generated** (`GenerationType.IDENTITY`). Services null the id on create, so a client-sent id is ignored.
-- **Partial updates:** `PATCH` bodies leave any `null`/omitted field unchanged (`if (x != null) entity.setX(x)`).
-- **Normalisation lives in the entities** (`normalize()`, run from the constructor and `@PrePersist`/`@PreUpdate`) using `StringUtil`. See §6.
+- Services return `Optional<Entity>` for "might not exist" and `boolean` for removes; controllers turn empty results into `404`. **Exception:** `DispatchService` throws unchecked domain exceptions (`ResourceNotFoundException` 404, `ConflictException` 409, `BadRequestException` 400) because one call can fail for several reasons.
+- **IDs are server-generated;** a client-sent id is ignored.
+- **PATCH semantics:** `null`/omitted field = unchanged.
+- **Normalisation lives in entities** (`normalize()` via constructor and `@PrePersist`/`@PreUpdate`) using `StringUtil`. `StaffEntity.normalize()` cleans its lists **in place**; replacing a Hibernate-managed collection inside a lifecycle callback breaks the flush.
+- **Only `DispatchService` changes `quantityDispatched`** and staff `DISPATCHED` state.
 
 ### Package map (`src/main/java/com/groupnine/bumberoos`)
 
 | Package | Contents |
 |---|---|
-| (root) | `BumberoosApplication` |
-| `config` | `PasswordConfig` — exposes a `BCryptPasswordEncoder` as `PasswordEncoder` |
+| `config` | `PasswordConfig` (BCrypt `PasswordEncoder`) |
 | `controllers` | `AuthController`, `UserAccountController`, `StaffController`, `IncidentController`, `InventoryController`, `ApiExceptionHandler` |
-| `services` | `AuthenticationService`, `UserAccountService`, `StaffService`, `IncidentService`, `InventoryService` |
+| `services` | `AuthenticationService`, `UserAccountService`, `StaffService`, `IncidentService`, `InventoryService`, `DispatchService` |
 | `mappers` | `UserAccountMapper`, `StaffMapper`, `IncidentMapper`, `ItemMapper` |
-| `dto` | `SignInRequest`, `SignUpRequest`, `UserAccountResponse`, `StaffRequest/UpdateRequest/Response`, `IncidentRequest/UpdateRequest/Response`, `ItemRequest/UpdateRequest/Response` (all Java records) |
-| `domain.entities` | `UserAccountEntity`, `StaffEntity`, `IncidentEntity`, `ItemEntity` |
-| `domain.enums` | `UserRole`, `StaffAvailability`, `IncidentSeverityLevel`, `IncidentStatus`, `ItemCondition` |
-| `domain.exceptions` | `EmailAlreadyInUseException`, `InvalidCredentialException`, `AuthenticationFailedException` (all unchecked); `InvalidInventoryExceptions` (**checked**); `ValidationException` (empty file, unused) |
-| `repositories` | `UserAccountRepository`, `StaffRepository`, `IncidentRepository`, `ItemRepository` |
+| `dto` | Requests/responses (records): auth, account, staff, incident (+ `StaffAssignmentResponse`, `ItemAssignmentResponse`, `AlarmEventResponse`, `ItemLine`, `ItemReturn`, `ResolveRequest`), item |
+| `domain.entities` | `UserAccountEntity`, `StaffEntity`, `IncidentEntity`, `ItemEntity`, `IncidentStaffAssignment`, `IncidentItemAssignment`, `IncidentAlarmEvent` |
+| `domain.enums` | `UserRole`, `StaffAvailability`, `IncidentNature`, `IncidentStatus`, `IncidentSeverityLevel` (deprecated), `AlarmLevel`, `ItemCondition`, `ItemCategory`, `ItemAvailability` (derived) |
+| `domain.exceptions` | `EmailAlreadyInUseException`, `InvalidCredentialException`, `AuthenticationFailedException`, `ConflictException`, `ResourceNotFoundException`, `BadRequestException` (unchecked); `InvalidInventoryExceptions` (checked); `ValidationException` (empty, unused) |
+| `repositories` | One per entity, plus `IncidentStaffAssignmentRepository`, `IncidentItemAssignmentRepository`, `IncidentAlarmEventRepository` |
 | `util` | `StringUtil` |
-
-### Dependency wiring
-- `AuthController` → `AuthenticationService`, `UserAccountMapper`
-- `AuthenticationService` → `UserAccountService`, `PasswordEncoder`
-- `UserAccountController` → `UserAccountService`, `StaffService`, `UserAccountMapper`
-- `IncidentController` → `IncidentService`, `StaffService`, `IncidentMapper` (it looks up the staff member itself, then passes the entity to the service)
-- `StaffController` → `StaffService`, `StaffMapper`
-- `InventoryController` → `InventoryService`, `ItemMapper`
-- Each service wraps exactly one repository (except `AuthenticationService`, which wraps `UserAccountService`).
 
 ---
 
 ## 3. Data model
 
-Schema is generated by Hibernate (`ddl-auto=update` in production, `create-drop` in tests). There are no migration scripts.
+Schema is generated by Hibernate (`ddl-auto=update` in production, `create-drop` in tests). Production needs a one-time manual migration (§12.2).
 
 ### 3.1 Tables
 
-**`user_accounts`** (`UserAccountEntity`) — login accounts, separate from staff
-| Column | Type / constraint |
-|---|---|
-| `id` | `Long`, identity PK |
-| `email` | not null, **unique**; lower-cased and trimmed by `normalize()` |
-| `password_hash` | not null; BCrypt hash |
-| `role` | `UserRole`, string-stored, not null |
-| `display_name` | title-cased |
-| `enabled` | boolean, default `true` |
-| `staff_id` | optional one-to-one (lazy) FK to `staff`, **unique** |
-| `created_at` | set on persist, not updatable |
+**`user_accounts`** — login accounts, separate from staff: `id`, `email` (unique, lower-cased), `password_hash` (BCrypt), `role`, `display_name`, `enabled`, `staff_id` (optional unique FK), `created_at`.
 
-**`staff`** (`StaffEntity`)
+**`staff`** — `id`, `staff_availability` (default `UNAVAILABLE`), `name`, `role`, `contact_number`, `address`, `employed`, `date_joined`; child tables `staff_trainings`, `staff_certifications` (eager `@ElementCollection`).
+
+**`incidents`**
+
 | Column | Notes |
 |---|---|
-| `id` | identity PK |
-| `staff_availability` | `StaffAvailability`, not null, default `UNAVAILABLE` |
-| `name`, `role`, `contact_number`, `address` | free text; normalised |
-| `employed` | boolean |
-| `date_joined` | set to today on persist, not updatable |
-| `staff_trainings` (`staff_id`, `training`) | `@ElementCollection`, eager |
-| `staff_certifications` (`staff_id`, `certification`) | `@ElementCollection`, eager |
+| `nature` | `IncidentNature`, not null |
+| `status` | `IncidentStatus`, not null, default `ONGOING` |
+| `alarm_level` | `AlarmLevel`, nullable; only valid when nature is `EMERGENCY` |
+| `severity_level` | **deprecated**, nullable |
+| `incident_type`, `location`, `reported_by`, `date_time_reported` | normalised text / timestamp |
+| `under_control_at`, `fire_out_at`, `resolved_at` | nullable timestamps |
 
-**`incidents`** (`IncidentEntity`)
-| Column | Notes |
-|---|---|
-| `id` | identity PK |
-| `severity_level` | `IncidentSeverityLevel`, not null |
-| `status` | `IncidentStatus`, not null |
-| `incident_type`, `location`, `reported_by` | normalised text |
-| `date_time_reported` | `LocalDateTime` |
-| `incident_deployed_staff` (`incident_id`, `staff_id`) | `@ManyToMany` join table; incident owns the relation |
+**`items`** — `id`, `item_condition`, `category` (default `OTHER`), `name`, `description`, `serial_number`, `quantity` (total owned), `quantity_dispatched` (out on incidents), `last_maintained`. Invariant: `0 <= quantity_dispatched <= quantity`.
 
-**`items`** (`ItemEntity`)
-| Column | Notes |
-|---|---|
-| `id` | identity PK |
-| `item_condition` | `ItemCondition`, not null (JSON field is called `condition`) |
-| `name` | not null; title-cased |
-| `description` | first letter capitalised |
-| `quantity` | `int` |
-| `last_maintained` | `LocalDate`, nullable; only set through PATCH |
+**`incident_staff_assignments`** — `incident_id`, `staff_id`, `role`, `assigned_at`, `released_at` (`null` = active).
 
-### 3.2 Relationships
-- `UserAccount` 0..1 ↔ 1 `Staff` (an account may be linked to one staff member; each staff member can have at most one account).
-- `Incident` many ↔ many `Staff` via `incident_deployed_staff`.
-- Items stand alone.
+**`incident_item_assignments`** — `incident_id`, `item_id`, `quantity` (>= 1), `assigned_at`, `released_at`, `return_condition`.
+
+**`incident_alarm_events`** — `incident_id`, `alarm_level`, `raised_at`. Appended on create (if an alarm level is given) and on every alarm change.
+
+Assignments are **released by setting `released_at`, never deleted** during normal operation (history). Deleting an incident cascades to its assignments and alarm events.
+
+### 3.2 Derived values (never stored)
+- `quantityAvailable = quantity - quantityDispatched`
+- Item `availability`: `UNAVAILABLE` if condition is not `GOOD` or quantity is 0; else `AVAILABLE` if nothing dispatched; `DISPATCHED` if all dispatched; otherwise `PARTIALLY_DISPATCHED`.
+- `deployedStaffIds` on an incident response = **active** staff assignments only.
 
 ### 3.3 Enums (stored by name)
 
@@ -139,261 +110,221 @@ Schema is generated by Hibernate (`ddl-auto=update` in production, `create-drop`
 |---|---|
 | `UserRole` | `ADMIN`, `DISPATCHER` |
 | `StaffAvailability` | `UNAVAILABLE`, `AVAILABLE`, `DISPATCHED` |
-| `IncidentSeverityLevel` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `IncidentStatus` | `ONGOING`, `PENDING` |
+| `IncidentNature` | `EMERGENCY`, `NON_EMERGENCY` |
+| `IncidentStatus` | `ONGOING`, `RESOLVED` (`PENDING` was removed) |
+| `AlarmLevel` | `FIRST_ALARM` … `FIFTH_ALARM`, `TASK_FORCE_ALPHA/BRAVO/CHARLIE/DELTA/ECHO/HOTEL/INDIA`, `GENERAL_ALARM` |
+| `IncidentSeverityLevel` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` — deprecated, optional |
 | `ItemCondition` | `GOOD`, `DAMAGED`, `RETIRED` |
+| `ItemCategory` | `ENGINE`, `AMBULANCE`, `FIRST_AID`, `SCBA`, `FIRE_SUIT`, `HOSE`, `RESCUE_TOOL`, `OTHER` |
+| `ItemAvailability` | `AVAILABLE`, `PARTIALLY_DISPATCHED`, `DISPATCHED`, `UNAVAILABLE` (response only) |
+
+Engines and other individually tracked gear should be separate item rows with `quantity = 1`; bulk gear (e.g. fire suits) uses one row with a larger quantity.
 
 ---
 
 ## 4. Configuration and running
 
-### 4.1 `src/main/resources/application.properties`
-```
-spring.application.name=bumberoos
-spring.config.import=optional:file:.env[.properties]
-spring.datasource.url=${DB_URL}
-spring.datasource.username=${DB_USERNAME}
-spring.datasource.password=${DB_PASSWORD}
-spring.datasource.hikari.maximum-pool-size=5
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-```
-Credentials come from a git-ignored `.env` file in the project root (or real environment variables). `.env.example` shows the shape:
-```
-DB_URL=jdbc:postgresql://<host>/<db>?sslmode=require
-DB_USERNAME=<user>
-DB_PASSWORD=<password>
-```
+`src/main/resources/application.properties` reads `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` from a git-ignored `.env` (or environment); `ddl-auto=update`, `show-sql=true`. Tests use `src/test/resources/application.properties` (H2, `create-drop`) and never touch Neon.
 
-### 4.2 `src/test/resources/application.properties`
-Overrides the datasource with `jdbc:h2:mem:bumberoos;MODE=PostgreSQL;DB_CLOSE_DELAY=-1` and `ddl-auto=create-drop`, so tests never touch Neon.
-
-### 4.3 Commands
 | Task | Command |
 |---|---|
-| Run server | `./mvnw spring-boot:run` (if `Permission denied`, use `sh mvnw spring-boot:run` or `chmod +x mvnw`) |
+| Run server | `./mvnw spring-boot:run` (`sh mvnw …` if `Permission denied`) |
 | Run tests | `./mvnw test` |
-| Compile only | `./mvnw compile` |
+
+To try the API without Neon, run against in-memory H2 with command-line overrides (H2 is test-scope, so include the test classpath): `-Dspring-boot.run.useTestClasspath=true -Dspring-boot.run.arguments="--spring.datasource.url=jdbc:h2:mem:manual;MODE=PostgreSQL --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=create-drop"`.
 
 ---
 
 ## 5. HTTP API
 
-All bodies are JSON. Base path `/api`. **There is no authentication or authorisation on any endpoint** (see §10).
+All bodies JSON. Base path `/api`. **No authentication or authorisation on any endpoint** (§10). `*` = required.
 
-### 5.1 Error handling (`ApiExceptionHandler`, `@RestControllerAdvice`)
+### 5.1 Errors (`ApiExceptionHandler`)
 
-Handled errors return `{"error": "<message>"}`:
+Every handled error returns `{"error": "<message>"}`, including 404s thrown by controllers (this **changed**: 404s previously used Spring's default body).
 
-| Exception | Status | Typical cause |
-|---|---|---|
-| `MethodArgumentNotValidException` | 400 | Bean-validation failure; message is the first field error, e.g. `"name must not be blank"` |
-| `InvalidCredentialException` | 400 | Blank or malformed email/password |
-| `InvalidInventoryExceptions` | 400 | Blank item name or negative quantity (service-level) |
-| `AuthenticationFailedException` | 401 | Sign-in failed |
-| `EmailAlreadyInUseException` | 409 | Sign-up with an existing email |
+| Status | Cause |
+|---|---|
+| 400 | Bean-validation failure (first field error), `InvalidCredentialException`, `InvalidInventoryExceptions`, `BadRequestException` (e.g. alarm level on a non-emergency, item quantity < 1, item return for an item not on the incident, resulting item quantity < 0) |
+| 401 | Sign-in failed |
+| 404 | Incident / staff / item / account not found |
+| 409 | `ConflictException`, `EmailAlreadyInUseException` |
 
-Not-found cases throw `ResponseStatusException(404)`, which returns **Spring's default error body**, not `{"error": ...}`.
-Unhandled exceptions (e.g. malformed JSON, bad enum value, FK violations) fall to Spring's defaults (400/500).
+Messages name the person or item and the reason, e.g. `"Ana is DISPATCHED"`, `"Juan is not employed"`, `"only 4 of Fire Suit available, 5 requested"`, `"incident 3 is RESOLVED"`.
+
+Other unhandled errors (malformed JSON, bad enum value) fall to Spring's defaults.
 
 ### 5.2 Auth — `/api/auth`
-
-| Method | Path | Body | Result |
-|---|---|---|---|
-| GET | `/registered` | – | `{"registered": bool}` — `false` when no **enabled ADMIN** exists, meaning the UI should offer account creation |
-| POST | `/signin` | `SignInRequest` | `200` `UserAccountResponse` |
-| POST | `/signup` | `SignUpRequest` | `201` `UserAccountResponse` |
-
-- `SignInRequest`: `email*`, `password*`
-- `SignUpRequest`: `email*`, `password*` (min 8 chars), `displayName`, `role` (defaults to `ADMIN`)
-- Both DTOs override `toString()` to mask the password.
-- `UserAccountResponse`: `id, email, displayName, role, enabled, staffId, createdAt` (never the hash).
-
-**Sign-in flow** (`AuthenticationService.signIn`): validate email/password → look up account by email (case-insensitive, trimmed) → require `enabled` → `passwordEncoder.matches`. Any failure throws a plain `Exception("please try logging in again")`; `AuthController` wraps it in `AuthenticationFailedException` → `401`. The same message is used for unknown email, wrong password and disabled account, so callers can't tell them apart.
-
-**Sign-up flow:** validate → reject duplicate email (`409`) → BCrypt-encode → save with role (default `ADMIN`). Sign-up is **open to anyone**, and any caller can choose `role`, including `ADMIN`, even after an admin exists.
-
-Email validation regex: `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`.
+`GET /registered` → `{"registered": bool}` (false when no enabled ADMIN exists) · `POST /signin` (`email*`, `password*`) → `UserAccountResponse` · `POST /signup` (`email*`, `password*` min 8, `displayName`, `role` default `ADMIN`) → `201`.
+Sign-in failures (unknown email, wrong password, disabled) share one message and return 401. Sign-up is open and the caller picks the role.
 
 ### 5.3 Accounts — `/api/accounts`
-
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/` | List all |
-| GET | `/{id}` | One |
-| PATCH | `/{id}/enabled?value=true\|false` | Enable/disable |
-| PUT | `/{id}/staff/{staffId}` | Link to a staff member (`404` if account or staff missing) |
-| DELETE | `/{id}/staff` | Unlink staff |
-| DELETE | `/{id}` | Delete, `204` |
-
-There is no endpoint to create accounts other than `/api/auth/signup`, nor to change a password.
+`GET /`, `GET /{id}`, `PATCH /{id}/enabled?value=`, `PUT /{id}/staff/{staffId}` (link), `DELETE /{id}/staff` (unlink), `DELETE /{id}` (204).
 
 ### 5.4 Staff — `/api/staff`
 
-| Method | Path | Body | Result |
-|---|---|---|---|
-| GET | `/` | – | `StaffResponse[]` |
-| GET | `/{id}` | – | `StaffResponse` |
-| POST | `/` | `StaffRequest` | `201` `StaffResponse` |
-| PATCH | `/{id}` | `StaffUpdateRequest` | `StaffResponse` |
-| DELETE | `/{id}` | – | `204` |
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/?availability=AVAILABLE` | optional filter |
+| GET | `/{id}` | |
+| POST | `/` | `StaffRequest`: `name*`, `role*`, `contactNumber`, `address`, `employed`, `trainings[]`, `certifications[]`. New staff start `UNAVAILABLE`. |
+| PATCH | `/{id}` | any of the above plus `availability` |
+| DELETE | `/{id}` | 204 |
 
-- `StaffRequest`: `name*`, `role*`, `contactNumber`, `address`, `employed` (boolean, default false), `trainings[]`, `certifications[]`
-- `StaffUpdateRequest`: any of `name, role, contactNumber, address, employed, trainings, certifications, availability`. `availability` can only be set via PATCH; new staff start `UNAVAILABLE`.
-- `StaffResponse`: `id, name, role, contactNumber, address, employed, availability, trainings, certifications, dateJoined`
+`StaffResponse`: `id, name, role, contactNumber, address, employed, availability, trainings, certifications, dateJoined`.
 
-### 5.5 Incidents — `/api/incidents`
+Rules (409):
+- `availability = DISPATCHED` cannot be set manually (dispatching does it).
+- Availability cannot change while the member has an active assignment (re-sending the current value is harmless).
+- `employed = false` is rejected while `DISPATCHED`.
+- **Delete** is rejected if the member has *any* assignment row (active or historical) or is linked to a login account; set `employed = false` instead.
 
-| Method | Path | Body | Result |
-|---|---|---|---|
-| GET | `/` | – | `IncidentResponse[]` |
-| GET | `/{id}` | – | `IncidentResponse` |
-| POST | `/` | `IncidentRequest` | `201` `IncidentResponse` |
-| PATCH | `/{id}` | `IncidentUpdateRequest` | `IncidentResponse` |
-| PUT | `/{id}/staff/{staffId}` | – | Deploy staff; idempotent (no-op if already deployed) |
-| DELETE | `/{id}/staff/{staffId}` | – | Undeploy staff (no-op if not deployed) |
-| DELETE | `/{id}` | – | `204` |
+### 5.5 Items — `/api/items`
 
-- `IncidentRequest`: `severityLevel*`, `status*`, `incidentType*`, `location*`, `reportedBy*`, `dateTimeReported` (ISO-8601; defaults to `now()` in `IncidentMapper`)
-- `IncidentUpdateRequest`: any of the same fields.
-- `IncidentResponse`: `id, severityLevel, status, incidentType, location, dateTimeReported, reportedBy, deployedStaffIds[]`
-- Deploying/undeploying **does not change** the staff member's `availability`; that is a separate PATCH.
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/?category=ENGINE&availableOnly=true` | both optional; `availableOnly` = `GOOD` with at least one free unit |
+| GET | `/{id}`, `/search?name=` | name search is case-insensitive, first match |
+| POST | `/` | `ItemRequest`: `name*`, `description`, `quantity` (>= 0), `condition*`, `category` (default `OTHER`), `serialNumber` |
+| PATCH | `/{id}` | any of `name, description, quantity, condition, lastMaintained, category, serialNumber` |
+| POST | `/{id}/increase?amount=N` | |
+| DELETE | `/{id}` | 204 |
 
-### 5.6 Inventory — `/api/items`
+`ItemResponse`: `id, name, description, quantity, condition, lastMaintained, category, serialNumber, quantityDispatched, quantityAvailable, availability`.
 
-| Method | Path | Body / params | Result |
-|---|---|---|---|
-| GET | `/` | – | `ItemResponse[]` |
-| GET | `/{id}` | – | `ItemResponse` |
-| GET | `/search?name=` | case-insensitive exact name | `ItemResponse` (`404` if none; first match if duplicates) |
-| POST | `/` | `ItemRequest` | `201` `ItemResponse` |
-| PATCH | `/{id}` | `ItemUpdateRequest` | `ItemResponse` |
-| POST | `/{id}/increase?amount=N` | – | `ItemResponse`; adds `N` to quantity |
-| DELETE | `/{id}` | – | `204` |
+Rules: quantity (via PATCH or `increase`) cannot drop below `quantityDispatched` (409) or below zero (400, `increase`). **Delete** is rejected (409) if the item has any assignment history; set condition `RETIRED` instead. `condition` can change at any time.
 
-- `ItemRequest`: `name*`, `description`, `quantity` (`@Min(0)`, default 0), `condition*`
-- `ItemUpdateRequest`: any of `name, description, quantity (>=0), condition, lastMaintained (YYYY-MM-DD)`
-- `ItemResponse`: `id, name, description, quantity, condition, lastMaintained`
-- Item names are not unique. `increase` accepts a negative `amount` and does not check the result, so quantity can go below zero.
+### 5.6 Incidents — `/api/incidents`
 
-`*` = required.
+| Method | Path | Result |
+|---|---|---|
+| GET | `/?status=ONGOING\|RESOLVED&nature=EMERGENCY\|NON_EMERGENCY` | filters optional |
+| GET | `/{id}` | |
+| POST | `/` | `201`; **atomic** create + assign staff and items |
+| PATCH | `/{id}` | descriptive fields, nature, alarm level, timestamps |
+| PUT | `/{id}/staff/{staffId}?role=Driver` | assign (idempotent; updates role) → `IncidentResponse` |
+| DELETE | `/{id}/staff/{staffId}` | release (no-op if not active) → `IncidentResponse` |
+| PUT | `/{id}/items/{itemId}?quantity=N` | set **total** units of that item on this incident (N >= 1) |
+| DELETE | `/{id}/items/{itemId}` | release all units of that item |
+| POST | `/{id}/resolve` | optional body `{"itemReturns":[{"itemId":7,"condition":"DAMAGED"}]}` |
+| POST | `/{id}/reopen` | |
+| DELETE | `/{id}` | 204; releases anything still dispatched first |
 
-### 5.7 Examples
+`IncidentRequest`: `nature*`, `alarmLevel` (emergency only), `incidentType*`, `location*`, `reportedBy*`, `dateTimeReported` (default now), `severityLevel` (deprecated), `staffIds[]`, `items[{itemId, quantity>=1}]`. **No `status` field**: new incidents are always `ONGOING`.
+
+`IncidentUpdateRequest`: any of `nature, alarmLevel, incidentType, location, reportedBy, dateTimeReported, underControlAt, fireOutAt, severityLevel`. No `status` (use resolve/reopen).
+
+`IncidentResponse`: `id, nature, status, alarmLevel, severityLevel, incidentType, location, reportedBy, dateTimeReported, underControlAt, fireOutAt, resolvedAt, deployedStaffIds[]` (active only), `staff[{staffId, name, role, assignedAt, releasedAt}]` and `items[{itemId, name, category, quantity, assignedAt, releasedAt, returnCondition}]` (active **and** released, i.e. history), `alarmHistory[{alarmLevel, raisedAt}]`.
+
 ```bash
-curl -X POST localhost:8080/api/auth/signup -H 'Content-Type: application/json' \
-  -d '{"email":"admin@bumberoos.com","password":"changeme123","displayName":"Admin"}'
-
-curl -X POST localhost:8080/api/incidents -H 'Content-Type: application/json' \
-  -d '{"severityLevel":"HIGH","status":"ONGOING","incidentType":"Fire","location":"Zone 3","reportedBy":"J. Cruz"}'
-
-curl -X PUT localhost:8080/api/incidents/1/staff/2
+curl -X POST localhost:8080/api/incidents -H 'Content-Type: application/json' -d '{
+  "nature":"EMERGENCY","alarmLevel":"FIRST_ALARM","incidentType":"Fire",
+  "location":"Zone 3","reportedBy":"J. Cruz","staffIds":[1,2],
+  "items":[{"itemId":1,"quantity":1},{"itemId":2,"quantity":4}]}'
+curl -X PUT   'localhost:8080/api/incidents/1/staff/3?role=Driver'
+curl -X PUT   'localhost:8080/api/incidents/1/items/2?quantity=6'
+curl -X PATCH localhost:8080/api/incidents/1 -H 'Content-Type: application/json' -d '{"alarmLevel":"SECOND_ALARM"}'
+curl -X POST  localhost:8080/api/incidents/1/resolve -H 'Content-Type: application/json' \
+  -d '{"itemReturns":[{"itemId":1,"condition":"DAMAGED"}]}'
 ```
 
 ---
 
-## 6. Business logic details
+## 6. Dispatch rules (`DispatchService`)
 
-### 6.1 Normalisation (`StringUtil` + entity hooks)
-Applied automatically before save; clients cannot bypass it.
+| Action | Staff | Item |
+|---|---|---|
+| Assign | must be `employed` and `AVAILABLE`; becomes `DISPATCHED` | must be `GOOD` with enough free units; `quantityDispatched += n` |
+| Release | becomes `AVAILABLE` | `quantityDispatched -= n` |
+| Resolve / delete | all active assignments released; staff `AVAILABLE` | units returned; optional return condition applied |
+
+- **Create** is all-or-nothing: any failure rolls back the whole transaction (no incident row, no staff or item changes). Duplicate `staffIds` collapse; duplicate item lines are merged by summing quantities.
+- Assign / set-quantity on a non-`ONGOING` incident → 409. Re-assigning the same staff member is a no-op (role updated if given).
+- A staff member can be active on only one incident; an item's units can never exceed stock.
+- **Set quantity** has PUT semantics: more than currently assigned takes extra units (checked against availability), fewer returns the difference, equal is a no-op.
+- **Resolve** is idempotent. A return condition applies to the **whole item row** (limitation: track gear that needs per-unit condition as separate rows). A non-`GOOD` item becomes `UNAVAILABLE` until fixed with a PATCH. A return for an item not on the incident → 400.
+- **Reopen** flips `RESOLVED → ONGOING` and clears `resolvedAt` but does **not** re-dispatch anyone.
+- Deployment does not need a separate availability PATCH: status sync is automatic.
+- **Concurrency:** pessimistic write locks (`SELECT … FOR UPDATE`) on the incident first, then staff, then items, each in ascending id order. Two dispatchers racing for the same person or last unit: exactly one succeeds, the other gets 409.
+
+### Incident updates (`IncidentService`)
+- A change of alarm level appends an `IncidentAlarmEvent`; downgrades are allowed; re-sending the current level adds nothing.
+- Nature or alarm level of a `RESOLVED` incident cannot be changed (409); descriptive text can.
+- An alarm level on a `NON_EMERGENCY` result is rejected (400), including when sent in the same PATCH as the switch to `NON_EMERGENCY`. Switching to `NON_EMERGENCY` on its own clears the alarm level without recording an event.
+
+---
+
+## 7. Normalisation (`StringUtil` + entity hooks)
 
 | Entity | Field | Rule |
 |---|---|---|
-| Staff | `name`, `role` | Trim, collapse whitespace, Title Case |
-| Staff | `contactNumber` | Keep only digits (leading `+` preserved); if no digits, just trimmed |
-| Staff | `address` | Trim + capitalise first letter |
-| Staff | `trainings`, `certifications` | Each entry Title Cased; blanks dropped |
-| Incident | `incidentType`, `reportedBy` | Title Case |
-| Incident | `location` | Capitalise first letter |
-| Item | `name` | Title Case |
-| Item | `description` | Capitalise first letter |
-| Account | `email` | Trim + lower-case |
-| Account | `displayName` | Title Case |
+| Staff | `name`, `role` | Title Case |
+| Staff | `contactNumber` | digits only (leading `+` kept) |
+| Staff | `address` | capitalise first letter |
+| Staff | `trainings`, `certifications` | each Title Cased, blanks dropped (in place) |
+| Incident | `incidentType`, `reportedBy` | Title Case; `location` capitalise first letter |
+| Item | `name` | Title Case; `description` capitalise first letter; `serialNumber` trimmed |
+| Assignment | `role` | Title Case, blank becomes null |
+| Account | `email` lower-case; `displayName` Title Case | |
 
-Consequence: values read back may differ from what was sent (e.g. `"house fire"` → `"House Fire"`; `"J. Cruz"` → `"J. Cruz"`; `"mcDonald"` → `"Mcdonald"`).
-
-`StringUtil` also contains `cleanListFromCsv` and `containsLetter`, currently unused (leftovers from the txt-file era).
-
-### 6.2 Transactions
-- `StaffService`, `IncidentService`, `UserAccountService`: class-level `@Transactional`; reads use `readOnly = true`.
-- `InventoryService`: `@Transactional(rollbackFor = Exception.class)` because `addItem` throws a checked exception.
-- `AuthenticationService` is not transactional itself; it calls transactional `UserAccountService` methods.
-
-### 6.3 Deletion behaviour
-Deleting staff who are deployed to an incident, or linked to an account, will hit FK constraints (no cascade or cleanup is coded) and surface as a `500`. Deleting an incident removes its rows in `incident_deployed_staff` (it owns the join table) but not the staff.
+Values read back can differ from what was sent (`"house fire"` → `"House Fire"`).
 
 ---
 
-## 7. Mappers
-
-Hand-written `@Component`s with `toEntity` (where creation is supported) and `toResponse`/`toResponses`:
-- `StaffMapper` — copies trainings/certifications with `List.copyOf`.
-- `IncidentMapper` — defaults `dateTimeReported`; maps `deployedStaff` to a list of ids. This touches a lazy collection, which works inside the open-in-view request scope.
-- `ItemMapper` — renames `itemCondition` ⇄ `condition`.
-- `UserAccountMapper` — response only (accounts are created through `AuthenticationService`); `staffId` is null when unlinked.
+## 8. Transactions
+`StaffService`, `IncidentService`, `UserAccountService`, `DispatchService`: class-level `@Transactional` (reads `readOnly`). `InventoryService`: `rollbackFor = Exception.class` (checked `InvalidInventoryExceptions`). Mappers read lazy collections (assignments, alarm events) within the request, relying on Spring's default open-in-view; `GET /api/incidents` may issue extra queries per incident (N+1).
 
 ---
 
-## 8. Tests (`src/test`)
+## 9. Tests (`src/test`) — 176 tests, all passing
 
-About 1,200 lines, 87 `@Test` methods. Two styles per service:
-
-| Style | Files | Notes |
-|---|---|---|
-| Mock unit tests (Mockito, no DB) | `IncidentServiceMockTest`, `InventoryServiceMockTest`, `StaffServiceMockTest`, `UserAccountServiceMockTest` | Mock the repository |
-| Spring + H2 integration tests | `IncidentServiceTest`, `InventoryServiceTest`, `StaffServiceTest`, `UserAccountServiceTest`, `AuthenticationServiceTest` | Real JPA against in-memory H2 |
-| Mapper tests | `MappersTest` | Pure unit |
-| Context smoke test | `BumberoosApplicationTests` | `@SpringBootTest` `contextLoads` |
-
-**Not covered:** controllers (no `MockMvc` tests), `ApiExceptionHandler`, and the new staff-deployment methods on incidents.
-**Status:** tests cannot currently run because main code fails to compile (§11).
-
----
-
-## 9. Typical workflows
-
-1. **First run:** `GET /api/auth/registered` → `false` → `POST /api/auth/signup` (creates ADMIN).
-2. **Daily use:** `POST /api/auth/signin` → returns the account (no token).
-3. **Onboard staff:** `POST /api/staff`, then `PATCH /api/staff/{id}` with `availability: "AVAILABLE"`; optionally `PUT /api/accounts/{id}/staff/{staffId}` to tie a login to them.
-4. **Handle an incident:** `POST /api/incidents` → `PUT /api/incidents/{id}/staff/{staffId}` for each responder → `PATCH` staff to `DISPATCHED` → `PATCH` the incident status as it evolves.
-5. **Inventory:** `POST /api/items`, restock with `POST /api/items/{id}/increase?amount=N`, record servicing with `PATCH` `lastMaintained`.
+| Kind | Files |
+|---|---|
+| Mockito unit tests | `IncidentServiceMockTest`, `InventoryServiceMockTest`, `StaffServiceMockTest`, `UserAccountServiceMockTest`, `DispatchServiceMockTest` (lock order, rule messages, no-ops) |
+| Spring + H2 integration | `IncidentServiceTest`, `InventoryServiceTest`, `StaffServiceTest`, `UserAccountServiceTest`, `AuthenticationServiceTest`, `DispatchServiceTest` (32 scenarios: create, assign, release, items, resolve, reopen, delete, history rules) |
+| Real commits (not `@Transactional`) | `DispatchServiceTransactionTest`: all-or-nothing create (conflict, unknown ids, over-stock) and two-thread races for one staff member and for the last unit of an item. Cleans up after itself. |
+| HTTP (`MockMvc`, `@AutoConfigureMockMvc`) | `controllers/IncidentFlowControllerTest`: create/modify/resolve/reopen flows, filters, error shapes, 400/404/409 mapping |
+| Mapper / DTO | `MappersTest` (derived ids, history, item availability states, validation) |
+| Smoke | `BumberoosApplicationTests` |
 
 ---
 
 ## 10. Security posture
-
-- **No session/JWT/token.** `signin` only verifies credentials and returns the account; every endpoint, including account deletion and enable/disable, is open.
-- **Roles are stored but not enforced** (`ADMIN` vs `DISPATCHER` has no effect).
-- **Open sign-up with caller-chosen role** allows anyone to create an admin.
-- Passwords: BCrypt-hashed, min 8 characters on sign-up, masked in DTO `toString()`. No lockout/rate limiting.
-- No CORS configuration; browser front-ends on other origins will be blocked.
-- `show-sql=true` logs all SQL in production config.
-- Do not expose this server publicly until authentication and authorisation are added.
+- No session/JWT; every endpoint, including account deletion, is open. Roles are stored but not enforced.
+- Sign-up is open and the caller chooses `role`, so anyone can create an `ADMIN`.
+- Passwords: BCrypt, min 8 chars, masked in DTO `toString()`. No lockout or rate limiting.
+- No CORS configuration. `show-sql=true` in the main config.
+- Do not expose this server publicly until authentication and authorisation exist.
 
 ---
 
-## 11. Known issues and gaps
+## 11. API changes that affect clients
+- `status` and `severityLevel` are no longer accepted on incident create; `status` is no longer accepted on PATCH. `nature` is now **required** on create.
+- `PENDING` no longer exists; use `ONGOING`/`RESOLVED` (changed via `resolve`/`reopen`).
+- `PUT/DELETE /incidents/{id}/staff/{staffId}` now return `IncidentResponse` with the richer shape (the old `deployedStaffIds` field is kept for compatibility).
+- All 404s now return `{"error": "..."}`.
+- Staff and item deletes and some PATCHes now return 409 where they previously succeeded or hit a database error.
+- `ItemRequest`/`ItemUpdateRequest`/`ItemResponse` gained fields; `IncidentResponse`/`IncidentRequest` changed shape.
 
-**Blocking**
-1. **Build is broken:** `services/IncidentService.java:67` uses `StaffEntity` (in `deployStaff`) without `import com.groupnine.bumberoos.domain.entities.StaffEntity;`. `mvn compile` fails with `cannot find symbol`. This comes from the uncommitted staff-deployment change.
+---
 
-**Behavioural**
-2. `InventoryService.addItem` throws a checked exception while every other service returns `Optional`/`boolean` (inconsistent error style).
-3. `AuthenticationService.signIn` throws a bare `Exception`, which the controller must wrap.
-4. Not-found responses use Spring's default body while other errors use `{"error": ...}`.
-5. Deleting staff that is deployed or linked fails with a FK error (§6.3).
-6. `increaseQuantity` accepts negative amounts.
-7. Deployment does not update `StaffAvailability`.
-8. Deployment can assign staff who are `UNAVAILABLE` or `employed=false`; nothing is checked.
+## 12. Known gaps and production migration
 
-**Housekeeping**
-9. `ValidationException.java` is an empty file; `StringUtil.cleanListFromCsv` and `containsLetter` are unused.
-10. `current_situation_1.md` is stale and should be deleted or replaced by this document.
-11. `mvnw` is not executable in the git checkout (`Permission denied`).
-12. No migration tool: `ddl-auto=update` can't drop/rename columns safely; Flyway/Liquibase is advisable before production.
-13. List endpoints are unpaginated and unfiltered (no filtering incidents by status/severity, staff by availability, etc.).
+### 12.1 Known gaps
+- No authentication or role enforcement; sign-up is open.
+- Deployment assumes staff availability is only changed through dispatch or the PATCH rules above; there is no duty roster.
+- Bulk items share one condition: a return condition applies to the whole row.
+- List endpoints are unpaginated; `GET /api/incidents` may be N+1 for large result sets.
+- Timestamps are `LocalDateTime` with no timezone handling.
+- `ValidationException.java` is an empty file; `StringUtil.cleanListFromCsv` and `containsLetter` are unused.
+- `mvnw` is not executable in the git checkout (use `sh mvnw`).
+- No migration tool (Flyway/Liquibase); `ddl-auto=update` cannot alter or drop constraints.
+- Out of scope / backlog: After Operations Report, structured location, volunteer credentials, casualty reporting, command details, SMS/push alerts, removal of deprecated `severityLevel`.
 
-**Suggested next steps**
-- Fix the missing import and re-run `./mvnw test`.
-- Add authentication (Spring Security + JWT or sessions) and role-based access; restrict sign-up after the first admin.
-- Add `MockMvc` controller tests and tests for deploy/undeploy.
-- Add pagination and filtering; unify error responses.
+### 12.2 Production database migration (Neon)
+`ddl-auto=update` creates the new tables and nullable columns but will **not** fix enum `CHECK` constraints, drop columns, backfill data or add `NOT NULL` columns to tables that already have rows. Run `docs/migrations/001_dispatch_and_incident_classification.sql` (written, **not run**) in this order:
+1. **Part A (pre-deploy):** drop the old `incidents` status/severity `CHECK` constraints (they would reject `RESOLVED`); `UPDATE incidents SET status='ONGOING' WHERE status='PENDING'`; add `nature`, `category`, `quantity_dispatched` with defaults; make `severity_level` nullable.
+2. **Deploy / start the new build once** so Hibernate creates `incident_staff_assignments`, `incident_item_assignments` and `incident_alarm_events`.
+3. **Part B (post-deploy):** copy rows from `incident_deployed_staff` into `incident_staff_assignments` as released historical assignments, then drop the old table. This assumes the existing data is disposable dev data; adapt it if the data matters.
+
+Take a backup / Neon branch first and check names against the live schema (inspect existing `CHECK` constraints with the query in the script header).

@@ -1,5 +1,7 @@
 package com.groupnine.bumberoos.dto;
 
+import com.groupnine.bumberoos.domain.enums.ItemAvailability;
+import com.groupnine.bumberoos.domain.enums.ItemCategory;
 import com.groupnine.bumberoos.domain.enums.ItemCondition;
 
 import java.time.LocalDate;
@@ -10,5 +12,10 @@ public record ItemResponse(
         String description,
         int quantity,
         ItemCondition condition,
-        LocalDate lastMaintained
+        LocalDate lastMaintained,
+        ItemCategory category,
+        String serialNumber,
+        int quantityDispatched,
+        int quantityAvailable,
+        ItemAvailability availability
 ) {}

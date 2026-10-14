@@ -3,6 +3,10 @@ package com.groupnine.bumberoos.services;
 import com.groupnine.bumberoos.domain.entities.ItemEntity;
 import com.groupnine.bumberoos.domain.enums.ItemCondition;
 import com.groupnine.bumberoos.domain.exceptions.InvalidInventoryExceptions;
+import com.groupnine.bumberoos.domain.enums.ItemCategory;
+import com.groupnine.bumberoos.domain.exceptions.BadRequestException;
+import com.groupnine.bumberoos.domain.exceptions.ConflictException;
+import com.groupnine.bumberoos.repositories.IncidentItemAssignmentRepository;
 import com.groupnine.bumberoos.repositories.ItemRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +28,9 @@ class InventoryServiceMockTest {
 
     @Mock
     private ItemRepository itemRepository;
+
+    @Mock
+    private IncidentItemAssignmentRepository assignmentRepository;
 
     @InjectMocks
     private InventoryService service;
@@ -71,8 +78,8 @@ class InventoryServiceMockTest {
 
     @Test
     void removeItem_deletesWhenExists_andReturnsFalseWhenMissing() {
-        when(itemRepository.existsById(1L)).thenReturn(true);
-        when(itemRepository.existsById(2L)).thenReturn(false);
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(mockItem(1L, 5)));
+        when(itemRepository.findById(2L)).thenReturn(Optional.empty());
 
         assertTrue(service.removeItem(1L));
         assertFalse(service.removeItem(2L));
@@ -88,7 +95,7 @@ class InventoryServiceMockTest {
         when(itemRepository.save(existing)).thenReturn(existing);
 
         ItemEntity edited = service.editItem(
-                1L, "rescue hose", "updated", 12, ItemCondition.DAMAGED, today
+                1L, "rescue hose", "updated", 12, ItemCondition.DAMAGED, today, null, null
         ).orElseThrow();
 
         assertEquals("Rescue Hose", edited.getName());
@@ -104,14 +111,14 @@ class InventoryServiceMockTest {
         when(itemRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(itemRepository.save(existing)).thenReturn(existing);
 
-        assertEquals(0, service.editItem(1L, null, null, 0, null, null).orElseThrow().getQuantity());
+        assertEquals(0, service.editItem(1L, null, null, 0, null, null, null, null).orElseThrow().getQuantity());
     }
 
     @Test
     void editItem_returnsEmptyAndDoesNotSaveWhenMissing() {
         when(itemRepository.findById(404L)).thenReturn(Optional.empty());
 
-        assertTrue(service.editItem(404L, "x", null, null, null, null).isEmpty());
+        assertTrue(service.editItem(404L, "x", null, null, null, null, null, null).isEmpty());
         verify(itemRepository, never()).save(any());
     }
 
@@ -150,5 +157,83 @@ class InventoryServiceMockTest {
 
         assertSame(item, service.findById(1L).orElseThrow());
         assertEquals(2, service.getAllItems().size());
+    }
+
+    // ===== DISPATCH-AWARE RULES ===== //
+
+    @Test
+    void addItem_resetsDispatchedAndDefaultsCategory() throws Exception {
+        ItemEntity input = mockItem(1L, 5);
+        input.setQuantityDispatched(3);
+        input.setCategory(null);
+        when(itemRepository.save(any(ItemEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+        ItemEntity result = service.addItem(input);
+
+        assertEquals(0, result.getQuantityDispatched());
+        assertEquals(ItemCategory.OTHER, result.getCategory());
+    }
+
+    @Test
+    void removeItem_blockedWhenItHasAssignmentHistory() {
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(mockItem(1L, 5)));
+        when(assignmentRepository.existsByItemId(1L)).thenReturn(true);
+
+        assertThrows(ConflictException.class, () -> service.removeItem(1L));
+        verify(itemRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void editItem_rejectsQuantityBelowDispatched() {
+        ItemEntity existing = mockItem(1L, 10);
+        existing.setQuantityDispatched(4);
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(existing));
+
+        assertThrows(ConflictException.class,
+                () -> service.editItem(1L, null, null, 3, null, null, null, null));
+        verify(itemRepository, never()).save(any());
+    }
+
+    @Test
+    void editItem_setsCategoryAndSerialNumber() {
+        ItemEntity existing = mockItem(1L, 1);
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(itemRepository.save(existing)).thenReturn(existing);
+
+        ItemEntity edited = service.editItem(1L, null, null, null, null, null, ItemCategory.ENGINE, " ABC 123 ")
+                .orElseThrow();
+
+        assertEquals(ItemCategory.ENGINE, edited.getCategory());
+        assertEquals("ABC 123", edited.getSerialNumber());
+    }
+
+    @Test
+    void increaseQuantity_rejectsResultBelowZero() {
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(mockItem(1L, 5)));
+
+        assertThrows(BadRequestException.class, () -> service.increaseQuantity(1L, -6));
+    }
+
+    @Test
+    void increaseQuantity_rejectsResultBelowDispatched() {
+        ItemEntity existing = mockItem(1L, 10);
+        existing.setQuantityDispatched(8);
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(existing));
+
+        assertThrows(ConflictException.class, () -> service.increaseQuantity(1L, -3));
+        verify(itemRepository, never()).save(any());
+    }
+
+    @Test
+    void getItems_choosesRepositoryQueryByFilters() {
+        service.getItems(null, false);
+        service.getItems(ItemCategory.ENGINE, false);
+        service.getItems(null, true);
+        service.getItems(ItemCategory.SCBA, true);
+
+        verify(itemRepository).findAll();
+        verify(itemRepository).findByCategory(ItemCategory.ENGINE);
+        verify(itemRepository).findWithAvailableUnits();
+        verify(itemRepository).findWithAvailableUnitsByCategory(ItemCategory.SCBA);
     }
 }
