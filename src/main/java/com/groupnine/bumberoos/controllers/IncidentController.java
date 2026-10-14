@@ -5,6 +5,7 @@ import com.groupnine.bumberoos.dto.IncidentResponse;
 import com.groupnine.bumberoos.dto.IncidentUpdateRequest;
 import com.groupnine.bumberoos.mappers.IncidentMapper;
 import com.groupnine.bumberoos.services.IncidentService;
+import com.groupnine.bumberoos.services.StaffService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -19,10 +20,16 @@ public class IncidentController {
     // ------------------ DEPENDENCY SETUP ------------------ //
 
     private final IncidentService incidentService;
+    private final StaffService staffService;
     private final IncidentMapper incidentMapper;
 
-    public IncidentController(IncidentService incidentService, IncidentMapper incidentMapper){
+    public IncidentController(
+            IncidentService incidentService,
+            StaffService staffService,
+            IncidentMapper incidentMapper
+    ){
         this.incidentService = incidentService;
+        this.staffService = staffService;
         this.incidentMapper = incidentMapper;
     }
 
@@ -50,6 +57,20 @@ public class IncidentController {
         return incidentService.editIncident(id, r.severityLevel(), r.status(), r.incidentType(),
                         r.location(), r.dateTimeReported(), r.reportedBy())
                 .map(incidentMapper::toResponse)
+                .orElseThrow(() -> notFound(id));
+    }
+
+    @PutMapping("/{id}/staff/{staffId}")
+    public IncidentResponse deployStaff(@PathVariable Long id, @PathVariable Long staffId) {
+        var staff = staffService.findById(staffId).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "staff " + staffId + " not found"));
+        return incidentService.deployStaff(id, staff).map(incidentMapper::toResponse)
+                .orElseThrow(() -> notFound(id));
+    }
+
+    @DeleteMapping("/{id}/staff/{staffId}")
+    public IncidentResponse undeployStaff(@PathVariable Long id, @PathVariable Long staffId) {
+        return incidentService.undeployStaff(id, staffId).map(incidentMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }
 

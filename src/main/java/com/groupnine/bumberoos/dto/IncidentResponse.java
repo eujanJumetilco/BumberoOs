@@ -4,6 +4,7 @@ import com.groupnine.bumberoos.domain.enums.IncidentSeverityLevel;
 import com.groupnine.bumberoos.domain.enums.IncidentStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record IncidentResponse(
         Long id,
@@ -12,5 +13,6 @@ public record IncidentResponse(
         String incidentType,
         String location,
         LocalDateTime dateTimeReported,
-        String reportedBy
+        String reportedBy,
+        List<Long> deployedStaffIds
 ) {}

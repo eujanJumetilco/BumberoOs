@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "incidents")
@@ -33,6 +35,14 @@ public class IncidentEntity {
     private String location;
     private LocalDateTime dateTimeReported;
     private String reportedBy;
+
+    @ManyToMany
+    @JoinTable(
+            name = "incident_deployed_staff",
+            joinColumns = @JoinColumn(name = "incident_id"),
+            inverseJoinColumns = @JoinColumn(name = "staff_id")
+    )
+    private List<StaffEntity> deployedStaff = new ArrayList<>();
 
     public IncidentEntity(
             IncidentSeverityLevel severityLevel, IncidentStatus status,

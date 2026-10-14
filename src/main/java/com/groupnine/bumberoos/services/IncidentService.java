@@ -61,6 +61,25 @@ public class IncidentService {
         });
     }
 
+    // =====> STAFF DEPLOYMENT <===== //
+
+    /** Deploying an already-deployed staff member is a no-op. */
+    public Optional<IncidentEntity> deployStaff(Long incidentId, StaffEntity staff) {
+        return incidentRepository.findById(incidentId).map(incident -> {
+            boolean alreadyDeployed = incident.getDeployedStaff().stream()
+                    .anyMatch(s -> s.getId().equals(staff.getId()));
+            if (!alreadyDeployed) incident.getDeployedStaff().add(staff);
+            return incidentRepository.save(incident);
+        });
+    }
+
+    public Optional<IncidentEntity> undeployStaff(Long incidentId, Long staffId) {
+        return incidentRepository.findById(incidentId).map(incident -> {
+            incident.getDeployedStaff().removeIf(s -> s.getId().equals(staffId));
+            return incidentRepository.save(incident);
+        });
+    }
+
     // =====> QUERIES <===== //
 
     @Transactional(readOnly = true)

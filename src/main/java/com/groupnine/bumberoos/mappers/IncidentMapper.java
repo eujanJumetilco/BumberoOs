@@ -1,6 +1,7 @@
 package com.groupnine.bumberoos.mappers;
 
 import com.groupnine.bumberoos.domain.entities.IncidentEntity;
+import com.groupnine.bumberoos.domain.entities.StaffEntity;
 import com.groupnine.bumberoos.dto.IncidentRequest;
 import com.groupnine.bumberoos.dto.IncidentResponse;
 import org.springframework.stereotype.Component;
@@ -25,7 +26,8 @@ public class IncidentMapper {
         return new IncidentResponse(
                 incident.getId(), incident.getSeverityLevel(), incident.getStatus(),
                 incident.getIncidentType(), incident.getLocation(),
-                incident.getDateTimeReported(), incident.getReportedBy()
+                incident.getDateTimeReported(), incident.getReportedBy(),
+                incident.getDeployedStaff().stream().map(StaffEntity::getId).toList()
         );
     }
 
