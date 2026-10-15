@@ -242,4 +242,78 @@ class IncidentFlowControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error", containsString("only 2")));
     }
+
+    // ===== arrival, commander and orders ===== //
+
+    @Test
+    void patch_recordsArrivalAndCommander_andOrdersAreListedInResponse() throws Exception {
+        long id = createIncidentId();
+
+        patchJson("/api/incidents/" + id, """
+                {"arrivedAt":"2026-10-15T03:20:00","commanderName":"fire insp. ana reyes"}""")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.arrivedAt", is("2026-10-15T03:20:00")))
+                .andExpect(jsonPath("$.commanderName", is("Fire Insp. Ana Reyes")));
+
+        postJson("/api/incidents/" + id + "/orders", """
+                {"instruction":"Lay a supply line to the corner hydrant"}""")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.commanderOrders", hasSize(1)))
+                .andExpect(jsonPath("$.commanderOrders[0].instruction", is("Lay a supply line to the corner hydrant")))
+                .andExpect(jsonPath("$.commanderOrders[0].issuedAt", notNullValue()));
+
+        mvc.perform(get("/api/incidents/" + id))
+                .andExpect(jsonPath("$.commanderOrders", hasSize(1)))
+                .andExpect(jsonPath("$.commanderName", is("Fire Insp. Ana Reyes")));
+    }
+
+    @Test
+    void order_blankInstruction_is400_unknownIncident_is404() throws Exception {
+        long id = createIncidentId();
+
+        postJson("/api/incidents/" + id + "/orders", "{\"instruction\":\"  \"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("instruction")));
+        postJson("/api/incidents/999999/orders", "{\"instruction\":\"x\"}")
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void order_onResolvedIncident_is409() throws Exception {
+        long id = createIncidentId();
+        postJson("/api/incidents/" + id + "/resolve", "{}").andExpect(status().isOk());
+
+        postJson("/api/incidents/" + id + "/orders", "{\"instruction\":\"x\"}")
+                .andExpect(status().isConflict());
+    }
+
+    // ===== staff ID ===== //
+
+    @Test
+    void staffId_isAcceptedReturnedAndUnique() throws Exception {
+        postJson("/api/staff", """
+                {"name":"ana reyes","role":"driver","employed":true,"badgeNumber":"2516528"}""")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.badgeNumber", is("2516528")));
+
+        postJson("/api/staff", """
+                {"name":"ben cruz","role":"driver","employed":true,"badgeNumber":"2516528"}""")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error", containsString("2516528")));
+
+        postJson("/api/staff", """
+                {"name":"ben cruz","role":"driver","employed":true,"badgeNumber":"12"}""")
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void assignedStaff_showTheirStaffIdOnTheIncident() throws Exception {
+        StaffEntity ana = staff("ana reyes", StaffAvailability.AVAILABLE);
+        staffService.editStaff(ana.getId(), null, null, null, null, null, null, null, null, "2516528");
+        long id = createIncidentId();
+
+        mvc.perform(put("/api/incidents/" + id + "/staff/" + ana.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.staff[0].badgeNumber", is("2516528")));
+    }
 }

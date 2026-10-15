@@ -1,6 +1,7 @@
 package com.groupnine.bumberoos.services;
 
 import com.groupnine.bumberoos.domain.entities.IncidentAlarmEvent;
+import com.groupnine.bumberoos.domain.entities.IncidentCommanderOrder;
 import com.groupnine.bumberoos.domain.entities.IncidentEntity;
 import com.groupnine.bumberoos.domain.enums.AlarmLevel;
 import com.groupnine.bumberoos.domain.enums.IncidentNature;
@@ -66,6 +67,29 @@ public class IncidentService {
             LocalDateTime fireOutAt,
             IncidentSeverityLevel severityLevel
     ) {
+        return editIncident(id, nature, alarmLevel, incidentType, location, dateTimeReported, reportedBy,
+                underControlAt, fireOutAt, severityLevel, null, null);
+    }
+
+    /**
+     * As above, plus the scene-arrival time and BFP Incident Commander. A blank {@code commanderName}
+     * clears the commander.
+     */
+    @SuppressWarnings("deprecation")
+    public Optional<IncidentEntity> editIncident(
+            Long id,
+            IncidentNature nature,
+            AlarmLevel alarmLevel,
+            String incidentType,
+            String location,
+            LocalDateTime dateTimeReported,
+            String reportedBy,
+            LocalDateTime underControlAt,
+            LocalDateTime fireOutAt,
+            IncidentSeverityLevel severityLevel,
+            LocalDateTime arrivedAt,
+            String commanderName
+    ) {
         return incidentRepository.findById(id).map(incident -> {
             boolean natureChanging = nature != null && nature != incident.getNature();
             boolean alarmChanging = alarmLevel != null && alarmLevel != incident.getAlarmLevel();
@@ -94,7 +118,30 @@ public class IncidentService {
             if (underControlAt != null) incident.setUnderControlAt(underControlAt);
             if (fireOutAt != null) incident.setFireOutAt(fireOutAt);
             if (severityLevel != null) incident.setSeverityLevel(severityLevel);
+            if (arrivedAt != null) incident.setArrivedAt(arrivedAt);
+            if (commanderName != null) incident.setCommanderName(commanderName);
             incident.normalize();
+            return incidentRepository.save(incident);
+        });
+    }
+
+    // =====> COMMANDER ORDERS <===== //
+
+    /**
+     * Records an instruction from the BFP Incident Commander, stamped with the current time.
+     *
+     * @throws ConflictException when the incident is RESOLVED
+     */
+    public Optional<IncidentEntity> addCommanderOrder(Long id, String instruction) {
+        if (instruction == null || instruction.isBlank()) {
+            throw new BadRequestException("instruction must not be blank");
+        }
+        return incidentRepository.findByIdForUpdate(id).map(incident -> {
+            if (incident.getStatus() == IncidentStatus.RESOLVED) {
+                throw new ConflictException("incident " + id + " is RESOLVED; reopen it to record new orders");
+            }
+            incident.getCommanderOrders().add(
+                    new IncidentCommanderOrder(incident, instruction.trim(), LocalDateTime.now()));
             return incidentRepository.save(incident);
         });
     }

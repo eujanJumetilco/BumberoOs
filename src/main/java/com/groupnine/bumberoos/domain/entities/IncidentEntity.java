@@ -51,6 +51,12 @@ public class IncidentEntity {
     private LocalDateTime fireOutAt;
     private LocalDateTime resolvedAt;
 
+    /** When the brigade arrived at the scene. */
+    private LocalDateTime arrivedAt;
+
+    /** The BFP Incident Commander the brigade reported to. */
+    private String commanderName;
+
     @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<IncidentStaffAssignment> staffAssignments = new ArrayList<>();
 
@@ -60,6 +66,10 @@ public class IncidentEntity {
     @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("raisedAt ASC, id ASC")
     private List<IncidentAlarmEvent> alarmEvents = new ArrayList<>();
+
+    @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("issuedAt ASC, id ASC")
+    private List<IncidentCommanderOrder> commanderOrders = new ArrayList<>();
 
     public IncidentEntity(
             IncidentNature nature, String incidentType, String location,
@@ -79,5 +89,7 @@ public class IncidentEntity {
         incidentType = StringUtil.toTitleCase(incidentType);
         location = StringUtil.capitalizeFirstLetter(location);
         reportedBy = StringUtil.toTitleCase(reportedBy);
+        commanderName = StringUtil.toTitleCase(commanderName);
+        if (commanderName != null && commanderName.isEmpty()) commanderName = null;
     }
 }

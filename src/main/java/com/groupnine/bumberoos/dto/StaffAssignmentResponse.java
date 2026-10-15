@@ -7,5 +7,6 @@ public record StaffAssignmentResponse(
         String name,
         String role,
         LocalDateTime assignedAt,
-        LocalDateTime releasedAt
+        LocalDateTime releasedAt,
+        String badgeNumber
 ) {}

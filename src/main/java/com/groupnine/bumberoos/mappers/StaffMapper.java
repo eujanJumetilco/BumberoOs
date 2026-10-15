@@ -11,11 +11,14 @@ import java.util.List;
 public class StaffMapper {
 
     public StaffEntity toEntity(StaffRequest request) {
-        return new StaffEntity(
+        StaffEntity staff = new StaffEntity(
                 request.name(), request.role(), request.contactNumber(),
                 request.address(), request.employed(),
                 request.trainings(), request.certifications()
         );
+        staff.setBadgeNumber(request.badgeNumber());
+        staff.normalize();
+        return staff;
     }
 
     public StaffResponse toResponse(StaffEntity staff) {
@@ -24,7 +27,7 @@ public class StaffMapper {
                 staff.getContactNumber(), staff.getAddress(), staff.isEmployed(),
                 staff.getStaffAvailability(),
                 List.copyOf(staff.getTrainings()), List.copyOf(staff.getCertifications()),
-                staff.getDateJoined()
+                staff.getDateJoined(), staff.getBadgeNumber()
         );
     }
 

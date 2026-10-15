@@ -1,5 +1,6 @@
 package com.groupnine.bumberoos.services;
 
+import com.groupnine.bumberoos.domain.exceptions.BadRequestException;
 import com.groupnine.bumberoos.domain.entities.StaffEntity;
 import com.groupnine.bumberoos.domain.enums.StaffAvailability;
 import com.groupnine.bumberoos.domain.enums.UserRole;
@@ -112,5 +113,72 @@ class StaffServiceTest {
 
         accountService.linkStaff(account.getId(), null);
         assertTrue(service.removeStaff(added.getId()));
+    }
+
+    // ===== staff ID (badge number) ===== //
+
+    private StaffEntity withBadge(String badge) {
+        StaffEntity s = sample();
+        s.setBadgeNumber(badge);
+        return s;
+    }
+
+    @Test
+    void addStaff_storesBadgeNumber() {
+        assertEquals("2516528", service.addStaff(withBadge(" 2516528 ")).getBadgeNumber());
+    }
+
+    @Test
+    void addStaff_withoutBadgeIsAllowed_andBlankBecomesNull() {
+        assertNull(service.addStaff(sample()).getBadgeNumber());
+        assertNull(service.addStaff(withBadge("  ")).getBadgeNumber());
+    }
+
+    @Test
+    void addStaff_rejectsMalformedBadge() {
+        assertThrows(BadRequestException.class, () -> service.addStaff(withBadge("123")));
+        assertThrows(BadRequestException.class, () -> service.addStaff(withBadge("25165289")));
+        assertThrows(BadRequestException.class, () -> service.addStaff(withBadge("25165a8")));
+    }
+
+    @Test
+    void addStaff_rejectsDuplicateBadge() {
+        service.addStaff(withBadge("2516528"));
+
+        ConflictException e = assertThrows(ConflictException.class, () -> service.addStaff(withBadge("2516528")));
+        assertTrue(e.getMessage().contains("2516528"));
+    }
+
+    @Test
+    void editStaff_setsChangesAndClearsBadge() {
+        StaffEntity added = service.addStaff(sample());
+
+        assertEquals("1111111", service.editStaff(added.getId(), null, null, null, null, null, null, null, null,
+                "1111111").orElseThrow().getBadgeNumber());
+        assertEquals("2222222", service.editStaff(added.getId(), null, null, null, null, null, null, null, null,
+                "2222222").orElseThrow().getBadgeNumber());
+        assertEquals("2222222", service.editStaff(added.getId(), null, null, null, null, null, null, null, null,
+                null).orElseThrow().getBadgeNumber(), "null leaves it unchanged");
+        assertNull(service.editStaff(added.getId(), null, null, null, null, null, null, null, null,
+                "").orElseThrow().getBadgeNumber(), "blank clears it");
+    }
+
+    @Test
+    void editStaff_keepingOwnBadgeIsNotAConflict() {
+        StaffEntity added = service.addStaff(withBadge("2516528"));
+
+        assertDoesNotThrow(() -> service.editStaff(added.getId(), null, null, null, null, null, null, null, null,
+                "2516528"));
+    }
+
+    @Test
+    void editStaff_rejectsBadgeUsedBySomeoneElse() {
+        service.addStaff(withBadge("2516528"));
+        StaffEntity other = service.addStaff(sample());
+
+        assertThrows(ConflictException.class, () -> service.editStaff(other.getId(), null, null, null, null, null,
+                null, null, null, "2516528"));
+        assertThrows(BadRequestException.class, () -> service.editStaff(other.getId(), null, null, null, null, null,
+                null, null, null, "12"));
     }
 }

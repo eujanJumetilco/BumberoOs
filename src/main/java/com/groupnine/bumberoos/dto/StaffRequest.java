@@ -1,6 +1,7 @@
 package com.groupnine.bumberoos.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 import java.util.List;
 
@@ -12,5 +13,6 @@ public record StaffRequest(
         String address,
         boolean employed,
         List<String> trainings,
-        List<String> certifications
+        List<String> certifications,
+        @Pattern(regexp = "\\d{7}", message = "must be exactly 7 digits") String badgeNumber
 ) {}

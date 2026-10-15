@@ -15,5 +15,6 @@ public record StaffResponse(
         StaffAvailability availability,
         List<String> trainings,
         List<String> certifications,
-        LocalDate dateJoined
+        LocalDate dateJoined,
+        String badgeNumber
 ) {}

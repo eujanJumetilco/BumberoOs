@@ -17,5 +17,7 @@ public interface StaffRepository extends JpaRepository<StaffEntity, Long> {
     @Query("select x from StaffEntity x where x.id = :id")
     Optional<StaffEntity> findByIdForUpdate(@Param("id") Long id);
 
+    Optional<StaffEntity> findByBadgeNumber(String badgeNumber);
+
     List<StaffEntity> findByStaffAvailability(StaffAvailability availability);
 }

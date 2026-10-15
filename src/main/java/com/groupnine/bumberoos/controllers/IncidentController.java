@@ -2,6 +2,7 @@ package com.groupnine.bumberoos.controllers;
 
 import com.groupnine.bumberoos.domain.enums.IncidentNature;
 import com.groupnine.bumberoos.domain.enums.IncidentStatus;
+import com.groupnine.bumberoos.dto.CommanderOrderRequest;
 import com.groupnine.bumberoos.dto.IncidentRequest;
 import com.groupnine.bumberoos.dto.IncidentResponse;
 import com.groupnine.bumberoos.dto.IncidentUpdateRequest;
@@ -65,7 +66,17 @@ public class IncidentController {
     @PatchMapping("/{id}")
     public IncidentResponse edit(@PathVariable Long id, @Valid @RequestBody IncidentUpdateRequest r) {
         return incidentService.editIncident(id, r.nature(), r.alarmLevel(), r.incidentType(), r.location(),
-                        r.dateTimeReported(), r.reportedBy(), r.underControlAt(), r.fireOutAt(), r.severityLevel())
+                        r.dateTimeReported(), r.reportedBy(), r.underControlAt(), r.fireOutAt(), r.severityLevel(),
+                        r.arrivedAt(), r.commanderName())
+                .map(incidentMapper::toResponse)
+                .orElseThrow(() -> notFound(id));
+    }
+
+    /** Records an instruction from the BFP Incident Commander. */
+    @PostMapping("/{id}/orders")
+    @ResponseStatus(HttpStatus.CREATED)
+    public IncidentResponse addCommanderOrder(@PathVariable Long id, @Valid @RequestBody CommanderOrderRequest request) {
+        return incidentService.addCommanderOrder(id, request.instruction())
                 .map(incidentMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }

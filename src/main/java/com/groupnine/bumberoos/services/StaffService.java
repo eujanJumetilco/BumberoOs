@@ -2,10 +2,12 @@ package com.groupnine.bumberoos.services;
 
 import com.groupnine.bumberoos.domain.entities.StaffEntity;
 import com.groupnine.bumberoos.domain.enums.StaffAvailability;
+import com.groupnine.bumberoos.domain.exceptions.BadRequestException;
 import com.groupnine.bumberoos.domain.exceptions.ConflictException;
 import com.groupnine.bumberoos.repositories.IncidentStaffAssignmentRepository;
 import com.groupnine.bumberoos.repositories.StaffRepository;
 import com.groupnine.bumberoos.repositories.UserAccountRepository;
+import com.groupnine.bumberoos.util.StringUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,8 @@ public class StaffService {
 
     public StaffEntity addStaff(StaffEntity staff) {
         staff.setId(null);
+        staff.normalize();
+        requireValidFreeBadge(staff.getBadgeNumber(), null);
         return staffRepository.save(staff);
     }
 
@@ -81,6 +85,27 @@ public class StaffService {
             List<String> certifications,
             StaffAvailability availability
     ) {
+        return editStaff(id, name, role, contactNumber, address, employed, trainings, certifications,
+                availability, null);
+    }
+
+    /**
+     * As above. {@code badgeNumber} must be 7 digits and not used by anyone else; a blank value clears it.
+     *
+     * @throws com.groupnine.bumberoos.domain.exceptions.BadRequestException if the badge number is malformed
+     */
+    public Optional<StaffEntity> editStaff(
+            Long id,
+            String name,
+            String role,
+            String contactNumber,
+            String address,
+            Boolean employed,
+            List<String> trainings,
+            List<String> certifications,
+            StaffAvailability availability,
+            String badgeNumber
+    ) {
         return staffRepository.findById(id).map(staff -> {
             boolean availabilityChanging = availability != null && availability != staff.getStaffAvailability();
 
@@ -98,6 +123,12 @@ public class StaffService {
                 throw new ConflictException(staff.getName() + " is DISPATCHED and cannot be marked not employed");
             }
 
+            String newBadge = badgeNumber == null ? null : StringUtil.clean(badgeNumber);
+            if (newBadge != null && !newBadge.equals(staff.getBadgeNumber())) {
+                if (!newBadge.isEmpty()) requireValidFreeBadge(newBadge, id);
+            }
+
+            if (newBadge != null) staff.setBadgeNumber(newBadge.isEmpty() ? null : newBadge);
             if (name != null) staff.setName(name);
             if (role != null) staff.setRole(role);
             if (contactNumber != null) staff.setContactNumber(contactNumber);
@@ -108,6 +139,19 @@ public class StaffService {
             if (availabilityChanging) staff.setStaffAvailability(availability);
             staff.normalize();
             return staffRepository.save(staff);
+        });
+    }
+
+    /** Null is allowed (no ID yet). Otherwise exactly 7 digits, unused by any other staff member. */
+    private void requireValidFreeBadge(String badgeNumber, Long ownId) {
+        if (badgeNumber == null) return;
+        if (!badgeNumber.matches("\\d{7}")) {
+            throw new BadRequestException("staff ID must be exactly 7 digits");
+        }
+        staffRepository.findByBadgeNumber(badgeNumber).ifPresent(other -> {
+            if (!other.getId().equals(ownId)) {
+                throw new ConflictException("staff ID " + badgeNumber + " is already used by " + other.getName());
+            }
         });
     }
 

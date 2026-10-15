@@ -1,5 +1,7 @@
 package com.groupnine.bumberoos.services;
 
+import com.groupnine.bumberoos.domain.exceptions.ConflictException;
+import com.groupnine.bumberoos.domain.exceptions.BadRequestException;
 import com.groupnine.bumberoos.domain.entities.IncidentEntity;
 import com.groupnine.bumberoos.domain.enums.AlarmLevel;
 import com.groupnine.bumberoos.domain.enums.IncidentNature;
@@ -123,5 +125,74 @@ class IncidentServiceTest {
                 .noneMatch(i -> i.getId().equals(emergency.getId())));
         assertTrue(service.getIncidents(null, IncidentNature.EMERGENCY).stream()
                 .anyMatch(i -> i.getId().equals(emergency.getId())));
+    }
+
+    // ===== arrival, commander and orders ===== //
+
+    private IncidentEntity editScene(Long id, LocalDateTime arrivedAt, String commander) {
+        return service.editIncident(id, null, null, null, null, null, null, null, null, null, arrivedAt, commander)
+                .orElseThrow();
+    }
+
+    @Test
+    void newIncident_hasNoArrivalCommanderOrOrders() {
+        IncidentEntity added = addSample();
+
+        assertNull(added.getArrivedAt());
+        assertNull(added.getCommanderName());
+        assertTrue(added.getCommanderOrders().isEmpty());
+    }
+
+    @Test
+    void editIncident_recordsArrivalAndCommander() {
+        IncidentEntity added = addSample();
+        LocalDateTime arrived = LocalDateTime.of(2026, 10, 15, 3, 20);
+
+        IncidentEntity edited = editScene(added.getId(), arrived, "fire insp. ana reyes");
+
+        assertEquals(arrived, edited.getArrivedAt());
+        assertEquals("Fire Insp. Ana Reyes", edited.getCommanderName());
+    }
+
+    @Test
+    void editIncident_nullLeavesSceneFieldsAndBlankClearsCommander() {
+        IncidentEntity added = addSample();
+        LocalDateTime arrived = LocalDateTime.of(2026, 10, 15, 3, 20);
+        editScene(added.getId(), arrived, "ana reyes");
+
+        IncidentEntity unchanged = editScene(added.getId(), null, null);
+        assertEquals(arrived, unchanged.getArrivedAt());
+        assertEquals("Ana Reyes", unchanged.getCommanderName());
+
+        assertNull(editScene(added.getId(), null, "  ").getCommanderName());
+    }
+
+    @Test
+    void addCommanderOrder_appendsInOrderWithTimestamp() {
+        IncidentEntity added = addSample();
+
+        service.addCommanderOrder(added.getId(), "  Lay a supply line  ").orElseThrow();
+        IncidentEntity after = service.addCommanderOrder(added.getId(), "Search the second floor").orElseThrow();
+
+        assertEquals(2, after.getCommanderOrders().size());
+        assertEquals("Lay a supply line", after.getCommanderOrders().get(0).getInstruction());
+        assertEquals("Search the second floor", after.getCommanderOrders().get(1).getInstruction());
+        assertNotNull(after.getCommanderOrders().get(0).getIssuedAt());
+    }
+
+    @Test
+    void addCommanderOrder_blankIsRejected_unknownIncidentIsEmpty() {
+        IncidentEntity added = addSample();
+
+        assertThrows(BadRequestException.class, () -> service.addCommanderOrder(added.getId(), "  "));
+        assertTrue(service.addCommanderOrder(-999L, "x").isEmpty());
+    }
+
+    @Test
+    void addCommanderOrder_resolvedIncidentIsAConflict() {
+        IncidentEntity added = addSample();
+        added.setStatus(IncidentStatus.RESOLVED);
+
+        assertThrows(ConflictException.class, () -> service.addCommanderOrder(added.getId(), "x"));
     }
 }

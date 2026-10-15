@@ -49,7 +49,7 @@ public class StaffController {
     @PatchMapping("/{id}")
     public StaffResponse edit(@PathVariable Long id, @Valid @RequestBody StaffUpdateRequest r) {
         return staffService.editStaff(id, r.name(), r.role(), r.contactNumber(), r.address(),
-                        r.employed(), r.trainings(), r.certifications(), r.availability())
+                        r.employed(), r.trainings(), r.certifications(), r.availability(), r.badgeNumber())
                 .map(staffMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }

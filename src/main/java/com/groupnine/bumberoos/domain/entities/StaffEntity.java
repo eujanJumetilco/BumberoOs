@@ -26,6 +26,10 @@ public class StaffEntity {
     @Column(nullable = false)
     private StaffAvailability staffAvailability = StaffAvailability.UNAVAILABLE;
 
+    /** Brigade ID, exactly 7 digits (e.g. 2516528). Unique; null for staff who have none yet. */
+    @Column(unique = true)
+    private String badgeNumber;
+
     private String name;
     private String role;
     private String contactNumber;
@@ -68,6 +72,8 @@ public class StaffEntity {
 
     @PreUpdate
     public void normalize() {
+        badgeNumber = StringUtil.clean(badgeNumber);
+        if (badgeNumber != null && badgeNumber.isEmpty()) badgeNumber = null;
         name = StringUtil.toTitleCase(name);
         role = StringUtil.toTitleCase(role);
         contactNumber = StringUtil.normalizePhoneNumber(contactNumber);

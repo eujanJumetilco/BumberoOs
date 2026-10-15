@@ -28,5 +28,8 @@ public record IncidentResponse(
         List<Long> deployedStaffIds,
         List<StaffAssignmentResponse> staff,
         List<ItemAssignmentResponse> items,
-        List<AlarmEventResponse> alarmHistory
+        List<AlarmEventResponse> alarmHistory,
+        LocalDateTime arrivedAt,
+        String commanderName,
+        List<CommanderOrderResponse> commanderOrders
 ) {}

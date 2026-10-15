@@ -45,7 +45,7 @@ public class IncidentMapper {
         List<StaffAssignmentResponse> staff = incident.getStaffAssignments().stream()
                 .map(a -> new StaffAssignmentResponse(
                         a.getStaff().getId(), a.getStaff().getName(), a.getRole(),
-                        a.getAssignedAt(), a.getReleasedAt()))
+                        a.getAssignedAt(), a.getReleasedAt(), a.getStaff().getBadgeNumber()))
                 .toList();
         List<ItemAssignmentResponse> items = incident.getItemAssignments().stream()
                 .map(a -> new ItemAssignmentResponse(
@@ -54,6 +54,9 @@ public class IncidentMapper {
                 .toList();
         List<AlarmEventResponse> alarmHistory = incident.getAlarmEvents().stream()
                 .map(e -> new AlarmEventResponse(e.getAlarmLevel(), e.getRaisedAt()))
+                .toList();
+        List<CommanderOrderResponse> orders = incident.getCommanderOrders().stream()
+                .map(o -> new CommanderOrderResponse(o.getInstruction(), o.getIssuedAt()))
                 .toList();
         List<Long> deployedStaffIds = incident.getStaffAssignments().stream()
                 .filter(IncidentStaffAssignment::isActive)
@@ -66,7 +69,8 @@ public class IncidentMapper {
                 incident.getIncidentType(), incident.getLocation(), incident.getReportedBy(),
                 incident.getDateTimeReported(), incident.getUnderControlAt(),
                 incident.getFireOutAt(), incident.getResolvedAt(),
-                deployedStaffIds, staff, items, alarmHistory
+                deployedStaffIds, staff, items, alarmHistory,
+                incident.getArrivedAt(), incident.getCommanderName(), orders
         );
     }
 

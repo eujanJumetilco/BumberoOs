@@ -16,5 +16,7 @@ public record IncidentUpdateRequest(
         LocalDateTime dateTimeReported,
         LocalDateTime underControlAt,
         LocalDateTime fireOutAt,
-        @Deprecated IncidentSeverityLevel severityLevel
+        @Deprecated IncidentSeverityLevel severityLevel,
+        LocalDateTime arrivedAt,
+        String commanderName
 ) {}
