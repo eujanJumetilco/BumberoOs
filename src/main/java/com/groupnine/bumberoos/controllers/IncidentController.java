@@ -67,7 +67,7 @@ public class IncidentController {
     public IncidentResponse edit(@PathVariable Long id, @Valid @RequestBody IncidentUpdateRequest r) {
         return incidentService.editIncident(id, r.nature(), r.alarmLevel(), r.incidentType(), r.location(),
                         r.dateTimeReported(), r.reportedBy(), r.underControlAt(), r.fireOutAt(), r.severityLevel(),
-                        r.arrivedAt(), r.commanderName())
+                        r.arrivedAt(), r.commanderName(), r.latitude(), r.longitude())
                 .map(incidentMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }

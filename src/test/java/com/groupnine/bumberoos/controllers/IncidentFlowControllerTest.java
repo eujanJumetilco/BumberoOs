@@ -316,4 +316,50 @@ class IncidentFlowControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.staff[0].badgeNumber", is("2516528")));
     }
+
+    // ===== map position ===== //
+
+    @Test
+    void create_withCoordinates_returnsThemAndPatchMovesThePin() throws Exception {
+        String body = postJson("/api/incidents", """
+                {"nature":"EMERGENCY","incidentType":"fire","location":"zone 3","reportedBy":"jc",
+                 "latitude":14.5995,"longitude":120.9842}""")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.latitude", is(14.5995)))
+                .andExpect(jsonPath("$.longitude", is(120.9842)))
+                .andReturn().getResponse().getContentAsString();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.id")).longValue();
+
+        patchJson("/api/incidents/" + id, "{\"latitude\":14.6,\"longitude\":121.0}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.latitude", is(14.6)))
+                .andExpect(jsonPath("$.longitude", is(121.0)));
+    }
+
+    @Test
+    void incidentWithoutCoordinates_hasNullPosition() throws Exception {
+        long id = createIncidentId();
+
+        mvc.perform(get("/api/incidents/" + id))
+                .andExpect(jsonPath("$.latitude", nullValue()))
+                .andExpect(jsonPath("$.longitude", nullValue()));
+    }
+
+    @Test
+    void coordinates_mustBeInRangeAndComeAsAPair() throws Exception {
+        postJson("/api/incidents", """
+                {"nature":"EMERGENCY","incidentType":"fire","location":"zone 3","reportedBy":"jc",
+                 "latitude":95,"longitude":120}""")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("latitude")));
+
+        postJson("/api/incidents", """
+                {"nature":"EMERGENCY","incidentType":"fire","location":"zone 3","reportedBy":"jc",
+                 "latitude":14.5}""")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("together")));
+
+        long id = createIncidentId();
+        patchJson("/api/incidents/" + id, "{\"longitude\":120.9}").andExpect(status().isBadRequest());
+    }
 }

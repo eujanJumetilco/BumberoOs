@@ -73,6 +73,10 @@ public class DispatchService {
             throw new BadRequestException("alarmLevel can only be set on an EMERGENCY incident");
         }
 
+        if ((incident.getLatitude() == null) != (incident.getLongitude() == null)) {
+            throw new BadRequestException("latitude and longitude must be given together");
+        }
+
         TreeSet<Long> staffToAssign = new TreeSet<>();
         if (staffIds != null) {
             for (Long staffId : staffIds) {

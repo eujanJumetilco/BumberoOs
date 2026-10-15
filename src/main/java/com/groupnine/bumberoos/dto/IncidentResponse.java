@@ -31,5 +31,7 @@ public record IncidentResponse(
         List<AlarmEventResponse> alarmHistory,
         LocalDateTime arrivedAt,
         String commanderName,
-        List<CommanderOrderResponse> commanderOrders
+        List<CommanderOrderResponse> commanderOrders,
+        Double latitude,
+        Double longitude
 ) {}

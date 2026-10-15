@@ -63,7 +63,7 @@ class MappersTest {
     // ===== Incident ===== //
 
     private IncidentRequest incidentRequest(IncidentNature nature, AlarmLevel alarm, LocalDateTime when) {
-        return new IncidentRequest(nature, alarm, "house fire", "brgy 1", "juan", when, null, null, null);
+        return new IncidentRequest(nature, alarm, "house fire", "brgy 1", "juan", when, null, null, null, null, null);
     }
 
     @Test
@@ -239,7 +239,7 @@ class MappersTest {
     @Test
     void validation_rejectsBadRequests() {
         assertFalse(validator.validate(new StaffRequest(" ", "driver", null, null, true, null, null, null)).isEmpty());
-        assertFalse(validator.validate(new IncidentRequest(null, null, "", "", "", null, null, null, null)).isEmpty());
+        assertFalse(validator.validate(new IncidentRequest(null, null, "", "", "", null, null, null, null, null, null)).isEmpty());
         assertFalse(validator.validate(new ItemRequest("", null, -1, null, null, null)).isEmpty());
         assertFalse(validator.validate(new ItemUpdateRequest(null, null, -5, null, null, null, null)).isEmpty());
         assertFalse(validator.validate(new SignUpRequest("a@b.com", "short", null, null)).isEmpty());
@@ -247,9 +247,9 @@ class MappersTest {
         assertFalse(validator.validate(new ItemLine(1L, 0)).isEmpty());
         assertFalse(validator.validate(new ItemLine(null, 1)).isEmpty());
         assertFalse(validator.validate(new IncidentRequest(IncidentNature.EMERGENCY, null, "fire", "z3", "jc", null, null,
-                null, List.of(new ItemLine(7L, 0)))).isEmpty());
+                null, List.of(new ItemLine(7L, 0)), null, null)).isEmpty());
         assertFalse(validator.validate(new IncidentRequest(IncidentNature.EMERGENCY, null, "fire", "z3", "jc", null, null,
-                java.util.Arrays.asList(1L, null), null)).isEmpty());
+                java.util.Arrays.asList(1L, null), null, null, null)).isEmpty());
         assertFalse(validator.validate(new ItemReturn(null, ItemCondition.GOOD)).isEmpty());
         assertFalse(validator.validate(new StaffRequest("juan", "driver", null, null, true, null, null, "123")).isEmpty());
         assertFalse(validator.validate(new StaffRequest("juan", "driver", null, null, true, null, null, "25165289")).isEmpty());
@@ -270,6 +270,39 @@ class MappersTest {
         assertTrue(validator.validate(new StaffUpdateRequest(null, null, null, null, null, null, null, null, null)).isEmpty());
         assertTrue(validator.validate(incidentRequest(IncidentNature.EMERGENCY, null, null)).isEmpty());
         assertTrue(validator.validate(new IncidentRequest(IncidentNature.EMERGENCY, null, "fire", "z3", "jc", null, null,
-                List.of(1L, 2L), List.of(new ItemLine(7L, 1)))).isEmpty());
+                List.of(1L, 2L), List.of(new ItemLine(7L, 1)), null, null)).isEmpty());
+    }
+
+    // ===== Map position ===== //
+
+    @Test
+    void incident_mapPositionFlowsFromRequestToResponse() {
+        IncidentEntity e = incidentMapper.toEntity(new IncidentRequest(IncidentNature.EMERGENCY, null, "fire", "z3",
+                "jc", null, null, null, null, 14.5995, 120.9842));
+
+        assertEquals(14.5995, e.getLatitude());
+        assertEquals(120.9842, e.getLongitude());
+        IncidentResponse r = incidentMapper.toResponse(e);
+        assertEquals(14.5995, r.latitude());
+        assertEquals(120.9842, r.longitude());
+    }
+
+    @Test
+    void incident_mapPositionIsOptional() {
+        IncidentResponse r = incidentMapper.toResponse(
+                incidentMapper.toEntity(incidentRequest(IncidentNature.EMERGENCY, null, null)));
+
+        assertNull(r.latitude());
+        assertNull(r.longitude());
+    }
+
+    @Test
+    void validation_rejectsOutOfRangeCoordinates() {
+        assertFalse(validator.validate(new IncidentRequest(IncidentNature.EMERGENCY, null, "fire", "z3", "jc", null,
+                null, null, null, 91.0, 120.0)).isEmpty());
+        assertFalse(validator.validate(new IncidentRequest(IncidentNature.EMERGENCY, null, "fire", "z3", "jc", null,
+                null, null, null, 14.0, -181.0)).isEmpty());
+        assertTrue(validator.validate(new IncidentRequest(IncidentNature.EMERGENCY, null, "fire", "z3", "jc", null,
+                null, null, null, -90.0, 180.0)).isEmpty());
     }
 }

@@ -44,6 +44,10 @@ public class IncidentEntity {
 
     private String incidentType;
     private String location;
+
+    /** Map position of the incident (WGS84). Both are set, or neither. */
+    private Double latitude;
+    private Double longitude;
     private LocalDateTime dateTimeReported;
     private String reportedBy;
 

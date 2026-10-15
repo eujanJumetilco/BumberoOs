@@ -195,4 +195,44 @@ class IncidentServiceTest {
 
         assertThrows(ConflictException.class, () -> service.addCommanderOrder(added.getId(), "x"));
     }
+
+    // ===== map position ===== //
+
+    private IncidentEntity move(Long id, Double lat, Double lng) {
+        return service.editIncident(id, null, null, null, null, null, null, null, null, null, null, null, lat, lng)
+                .orElseThrow();
+    }
+
+    @Test
+    void editIncident_setsAndMovesTheMapPosition() {
+        IncidentEntity added = addSample();
+        assertNull(added.getLatitude());
+
+        IncidentEntity placed = move(added.getId(), 14.5995, 120.9842);
+        assertEquals(14.5995, placed.getLatitude());
+        assertEquals(120.9842, placed.getLongitude());
+
+        IncidentEntity moved = move(added.getId(), 14.6, 121.0);
+        assertEquals(14.6, moved.getLatitude());
+        assertEquals(121.0, moved.getLongitude());
+    }
+
+    @Test
+    void editIncident_withNoCoordinatesLeavesThePositionAlone() {
+        IncidentEntity added = addSample();
+        move(added.getId(), 14.5995, 120.9842);
+
+        IncidentEntity unchanged = move(added.getId(), null, null);
+
+        assertEquals(14.5995, unchanged.getLatitude());
+        assertEquals(120.9842, unchanged.getLongitude());
+    }
+
+    @Test
+    void editIncident_requiresLatitudeAndLongitudeTogether() {
+        IncidentEntity added = addSample();
+
+        assertThrows(BadRequestException.class, () -> move(added.getId(), 14.5, null));
+        assertThrows(BadRequestException.class, () -> move(added.getId(), null, 120.9));
+    }
 }

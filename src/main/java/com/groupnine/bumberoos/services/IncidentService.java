@@ -35,6 +35,7 @@ public class IncidentService {
 
     /** Always starts ONGOING. Records the first alarm event when an alarm level is given. */
     public IncidentEntity addIncident(IncidentEntity incident) {
+        requireBothOrNeither(incident.getLatitude(), incident.getLongitude());
         incident.setId(null);
         incident.setStatus(IncidentStatus.ONGOING);
         if (incident.getAlarmLevel() != null && incident.getNature() != IncidentNature.EMERGENCY) {
@@ -90,6 +91,34 @@ public class IncidentService {
             LocalDateTime arrivedAt,
             String commanderName
     ) {
+        return editIncident(id, nature, alarmLevel, incidentType, location, dateTimeReported, reportedBy,
+                underControlAt, fireOutAt, severityLevel, arrivedAt, commanderName, null, null);
+    }
+
+    /**
+     * As above, plus the map position. Give both {@code latitude} and {@code longitude} to move the pin,
+     * or neither to leave it alone.
+     *
+     * @throws BadRequestException when only one of the two is given
+     */
+    @SuppressWarnings("deprecation")
+    public Optional<IncidentEntity> editIncident(
+            Long id,
+            IncidentNature nature,
+            AlarmLevel alarmLevel,
+            String incidentType,
+            String location,
+            LocalDateTime dateTimeReported,
+            String reportedBy,
+            LocalDateTime underControlAt,
+            LocalDateTime fireOutAt,
+            IncidentSeverityLevel severityLevel,
+            LocalDateTime arrivedAt,
+            String commanderName,
+            Double latitude,
+            Double longitude
+    ) {
+        requireBothOrNeither(latitude, longitude);
         return incidentRepository.findById(id).map(incident -> {
             boolean natureChanging = nature != null && nature != incident.getNature();
             boolean alarmChanging = alarmLevel != null && alarmLevel != incident.getAlarmLevel();
@@ -120,6 +149,10 @@ public class IncidentService {
             if (severityLevel != null) incident.setSeverityLevel(severityLevel);
             if (arrivedAt != null) incident.setArrivedAt(arrivedAt);
             if (commanderName != null) incident.setCommanderName(commanderName);
+            if (latitude != null) {
+                incident.setLatitude(latitude);
+                incident.setLongitude(longitude);
+            }
             incident.normalize();
             return incidentRepository.save(incident);
         });
@@ -165,5 +198,11 @@ public class IncidentService {
         if (status != null) return incidentRepository.findByStatus(status);
         if (nature != null) return incidentRepository.findByNature(nature);
         return incidentRepository.findAll();
+    }
+
+    private static void requireBothOrNeither(Double latitude, Double longitude) {
+        if ((latitude == null) != (longitude == null)) {
+            throw new BadRequestException("latitude and longitude must be given together");
+        }
     }
 }

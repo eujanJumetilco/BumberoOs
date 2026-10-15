@@ -23,6 +23,8 @@ public class IncidentMapper {
         );
         incident.setAlarmLevel(request.alarmLevel());
         incident.setSeverityLevel(request.severityLevel());
+        incident.setLatitude(request.latitude());
+        incident.setLongitude(request.longitude());
         return incident;
     }
 
@@ -70,7 +72,8 @@ public class IncidentMapper {
                 incident.getDateTimeReported(), incident.getUnderControlAt(),
                 incident.getFireOutAt(), incident.getResolvedAt(),
                 deployedStaffIds, staff, items, alarmHistory,
-                incident.getArrivedAt(), incident.getCommanderName(), orders
+                incident.getArrivedAt(), incident.getCommanderName(), orders,
+                incident.getLatitude(), incident.getLongitude()
         );
     }
 
