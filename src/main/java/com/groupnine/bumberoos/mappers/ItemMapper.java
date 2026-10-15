@@ -11,11 +11,13 @@ import java.util.List;
 public class ItemMapper {
 
     public ItemEntity toEntity(ItemRequest request) {
-        return new ItemEntity(
+        ItemEntity item = new ItemEntity(
                 request.condition(), request.name(),
                 request.description(), request.quantity(),
                 request.category(), request.serialNumber()
         );
+        item.setExpiryDate(request.expiryDate());
+        return item;
     }
 
     public ItemResponse toResponse(ItemEntity item) {
@@ -23,7 +25,8 @@ public class ItemMapper {
                 item.getId(), item.getName(), item.getDescription(),
                 item.getQuantity(), item.getItemCondition(), item.getLastMaintained(),
                 item.getCategory(), item.getSerialNumber(),
-                item.getQuantityDispatched(), item.getQuantityAvailable(), item.getAvailability()
+                item.getQuantityDispatched(), item.getQuantityAvailable(), item.getAvailability(),
+                item.getExpiryDate()
         );
     }
 

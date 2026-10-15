@@ -72,6 +72,21 @@ public class InventoryService {
             ItemCategory category,
             String serialNumber
     ) {
+        return editItem(id, name, description, quantity, condition, lastMaintained, category, serialNumber, null);
+    }
+
+    /** As above, plus the expiry date (null leaves it unchanged). */
+    public Optional<ItemEntity> editItem(
+            Long id,
+            String name,
+            String description,
+            Integer quantity,
+            ItemCondition condition,
+            LocalDate lastMaintained,
+            ItemCategory category,
+            String serialNumber,
+            LocalDate expiryDate
+    ) {
         return itemRepository.findById(id).map(item -> {
             if (quantity != null && quantity < item.getQuantityDispatched()) {
                 throw new ConflictException(item.getName() + " has " + item.getQuantityDispatched()
@@ -84,6 +99,7 @@ public class InventoryService {
             if (lastMaintained != null) item.setLastMaintained(lastMaintained);
             if (category != null) item.setCategory(category);
             if (serialNumber != null) item.setSerialNumber(serialNumber);
+            if (expiryDate != null) item.setExpiryDate(expiryDate);
             item.normalize();
             return itemRepository.save(item);
         });

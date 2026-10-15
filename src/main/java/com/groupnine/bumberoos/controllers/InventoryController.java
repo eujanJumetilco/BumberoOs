@@ -2,16 +2,20 @@ package com.groupnine.bumberoos.controllers;
 
 import com.groupnine.bumberoos.domain.enums.ItemCategory;
 import com.groupnine.bumberoos.domain.exceptions.InvalidInventoryExceptions;
+import com.groupnine.bumberoos.dto.AlertResponse;
 import com.groupnine.bumberoos.dto.ItemRequest;
 import com.groupnine.bumberoos.dto.ItemResponse;
 import com.groupnine.bumberoos.dto.ItemUpdateRequest;
 import com.groupnine.bumberoos.mappers.ItemMapper;
+import com.groupnine.bumberoos.services.InventoryAlertService;
 import com.groupnine.bumberoos.services.InventoryService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 @RestController
@@ -20,11 +24,17 @@ public class InventoryController {
 
     // ------------------ DEPENDENCY SETUP ------------------ //
 
+    private static final ZoneId STATION_ZONE = ZoneId.of("Asia/Manila");
+
     private final InventoryService inventoryService;
+    private final InventoryAlertService inventoryAlertService;
     private final ItemMapper itemMapper;
 
-    public InventoryController(InventoryService inventoryService, ItemMapper itemMapper){
+    public InventoryController(
+            InventoryService inventoryService, InventoryAlertService inventoryAlertService, ItemMapper itemMapper
+    ){
         this.inventoryService = inventoryService;
+        this.inventoryAlertService = inventoryAlertService;
         this.itemMapper = itemMapper;
     }
 
@@ -36,6 +46,12 @@ public class InventoryController {
             @RequestParam(defaultValue = "false") boolean availableOnly
     ) {
         return itemMapper.toResponses(inventoryService.getItems(category, availableOnly));
+    }
+
+    /** Expired, expiring, overdue-for-maintenance, low-stock and damaged-vehicle alerts. Dates use Philippine time. */
+    @GetMapping("/alerts")
+    public List<AlertResponse> alerts() {
+        return inventoryAlertService.getAlerts(LocalDate.now(STATION_ZONE));
     }
 
     @GetMapping("/{id}")
@@ -59,7 +75,7 @@ public class InventoryController {
     @PatchMapping("/{id}")
     public ItemResponse edit(@PathVariable Long id, @Valid @RequestBody ItemUpdateRequest r) {
         return inventoryService.editItem(id, r.name(), r.description(), r.quantity(),
-                        r.condition(), r.lastMaintained(), r.category(), r.serialNumber())
+                        r.condition(), r.lastMaintained(), r.category(), r.serialNumber(), r.expiryDate())
                 .map(itemMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }

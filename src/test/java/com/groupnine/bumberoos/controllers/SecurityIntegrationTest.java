@@ -282,4 +282,59 @@ class SecurityIntegrationTest {
         mvc.perform(put("/api/accounts/" + b.getId() + "/staff/" + staffId).session(admin))
                 .andExpect(status().isOk());
     }
+
+    // ===== inventory rules and alerts ===== //
+
+    @Test
+    void inventoryRules_readableBySignedInUsers_writableOnlyByAdmins() throws Exception {
+        account("dispatcher@test.com", UserRole.DISPATCHER);
+        account("admin@test.com", UserRole.ADMIN);
+        MockHttpSession dispatcher = sessionFor("dispatcher@test.com");
+        MockHttpSession admin = sessionFor("admin@test.com");
+        String body = "{\"defaultMaintenanceIntervalDays\":90,\"expiryWarningDays\":14,"
+                + "\"categories\":[{\"category\":\"SCBA\",\"lowStockThreshold\":4,\"maintenanceIntervalDays\":60}]}";
+
+        mvc.perform(get("/api/settings/inventory-rules")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/settings/inventory-rules").session(dispatcher)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.categories", hasSize(8)));
+        mvc.perform(put("/api/settings/inventory-rules").contentType(MediaType.APPLICATION_JSON).content(body)
+                        .session(dispatcher))
+                .andExpect(status().isForbidden());
+        mvc.perform(put("/api/settings/inventory-rules").contentType(MediaType.APPLICATION_JSON).content(body)
+                        .session(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.defaultMaintenanceIntervalDays", is(90)))
+                .andExpect(jsonPath("$.categories[?(@.category=='SCBA')].lowStockThreshold", contains(4)));
+        // Dispatchers now see what the admin saved.
+        mvc.perform(get("/api/settings/inventory-rules").session(dispatcher))
+                .andExpect(jsonPath("$.expiryWarningDays", is(14)));
+    }
+
+    @Test
+    void inventoryRules_rejectInvalidInput() throws Exception {
+        account("admin@test.com", UserRole.ADMIN);
+        MockHttpSession admin = sessionFor("admin@test.com");
+
+        mvc.perform(put("/api/settings/inventory-rules").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"defaultMaintenanceIntervalDays\":-1,\"expiryWarningDays\":30}").session(admin))
+                .andExpect(status().isBadRequest());
+        mvc.perform(put("/api/settings/inventory-rules").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expiryWarningDays\":30}").session(admin))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void items_carryAnExpiryDate_andAppearInAlerts() throws Exception {
+        account("admin@test.com", UserRole.ADMIN);
+        MockHttpSession admin = sessionFor("admin@test.com");
+
+        mvc.perform(post("/api/items").contentType(MediaType.APPLICATION_JSON).session(admin).content(
+                        "{\"name\":\"Old Extinguisher\",\"quantity\":1,\"condition\":\"GOOD\",\"category\":\"OTHER\","
+                                + "\"expiryDate\":\"2020-01-01\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.expiryDate", is("2020-01-01")));
+
+        mvc.perform(get("/api/items/alerts").session(admin)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.type=='EXPIRED' && @.itemName=='Old Extinguisher')]", hasSize(1)));
+        mvc.perform(get("/api/items/alerts")).andExpect(status().isUnauthorized());
+    }
 }

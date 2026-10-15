@@ -160,7 +160,7 @@ class MappersTest {
     @Test
     void item_roundTrip() {
         ItemEntity e = itemMapper.toEntity(new ItemRequest(
-                "fire hose", "30 meter", 5, ItemCondition.DAMAGED, ItemCategory.HOSE, " H-1 "));
+                "fire hose", "30 meter", 5, ItemCondition.DAMAGED, ItemCategory.HOSE, " H-1 ", null));
         e.setId(2L);
         e.setLastMaintained(LocalDate.of(2026, 2, 2));
 
@@ -179,7 +179,7 @@ class MappersTest {
 
     @Test
     void item_categoryDefaultsToOther() {
-        ItemEntity e = itemMapper.toEntity(new ItemRequest("x", null, 1, ItemCondition.GOOD, null, null));
+        ItemEntity e = itemMapper.toEntity(new ItemRequest("x", null, 1, ItemCondition.GOOD, null, null, null));
 
         assertEquals(ItemCategory.OTHER, e.getCategory());
     }
@@ -240,8 +240,8 @@ class MappersTest {
     void validation_rejectsBadRequests() {
         assertFalse(validator.validate(new StaffRequest(" ", "driver", null, null, true, null, null, null)).isEmpty());
         assertFalse(validator.validate(new IncidentRequest(null, null, "", "", "", null, null, null, null, null, null)).isEmpty());
-        assertFalse(validator.validate(new ItemRequest("", null, -1, null, null, null)).isEmpty());
-        assertFalse(validator.validate(new ItemUpdateRequest(null, null, -5, null, null, null, null)).isEmpty());
+        assertFalse(validator.validate(new ItemRequest("", null, -1, null, null, null, null)).isEmpty());
+        assertFalse(validator.validate(new ItemUpdateRequest(null, null, -5, null, null, null, null, null)).isEmpty());
         assertFalse(validator.validate(new SignUpRequest("a@b.com", "short", null, null)).isEmpty());
         assertFalse(validator.validate(new SignInRequest("", "")).isEmpty());
         assertFalse(validator.validate(new ItemLine(1L, 0)).isEmpty());
@@ -265,7 +265,7 @@ class MappersTest {
         assertTrue(validator.validate(new StaffRequest("juan", "driver", null, null, true, null, null, "2516528")).isEmpty());
         assertTrue(validator.validate(new StaffUpdateRequest(null, null, null, null, null, null, null, null, "")).isEmpty());
         assertTrue(validator.validate(new CommanderOrderRequest("Lay a supply line to the hydrant")).isEmpty());
-        assertTrue(validator.validate(new ItemRequest("hose", null, 0, ItemCondition.GOOD, null, null)).isEmpty());
+        assertTrue(validator.validate(new ItemRequest("hose", null, 0, ItemCondition.GOOD, null, null, null)).isEmpty());
         assertTrue(validator.validate(new SignUpRequest("a@b.com", "secret123", null, null)).isEmpty());
         assertTrue(validator.validate(new StaffUpdateRequest(null, null, null, null, null, null, null, null, null)).isEmpty());
         assertTrue(validator.validate(incidentRequest(IncidentNature.EMERGENCY, null, null)).isEmpty());

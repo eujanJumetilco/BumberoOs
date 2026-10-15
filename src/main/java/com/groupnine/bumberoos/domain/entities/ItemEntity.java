@@ -46,6 +46,9 @@ public class ItemEntity {
 
     private LocalDate lastMaintained;
 
+    /** For items that expire, such as extinguishers or medical stock. Null for items that do not. */
+    private LocalDate expiryDate;
+
     public ItemEntity(
             ItemCondition itemCondition, String name,
             String description, int quantity

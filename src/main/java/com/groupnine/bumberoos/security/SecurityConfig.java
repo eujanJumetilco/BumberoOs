@@ -44,6 +44,7 @@ public class SecurityConfig {
                         // Anyone may create the very first admin; after that only an admin may add accounts.
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup").access(signupAllowed(accountService))
                         .requestMatchers("/api/accounts/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/settings/**").hasRole("ADMIN")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 .exceptionHandling(errors -> errors

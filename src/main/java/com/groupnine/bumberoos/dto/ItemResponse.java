@@ -17,5 +17,6 @@ public record ItemResponse(
         String serialNumber,
         int quantityDispatched,
         int quantityAvailable,
-        ItemAvailability availability
+        ItemAvailability availability,
+        LocalDate expiryDate
 ) {}

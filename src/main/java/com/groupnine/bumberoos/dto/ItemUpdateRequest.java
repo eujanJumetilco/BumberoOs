@@ -14,5 +14,6 @@ public record ItemUpdateRequest(
         ItemCondition condition,
         LocalDate lastMaintained,
         ItemCategory category,
-        String serialNumber
+        String serialNumber,
+        LocalDate expiryDate
 ) {}
