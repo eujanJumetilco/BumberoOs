@@ -254,4 +254,32 @@ class SecurityIntegrationTest {
                 .andExpect(status().isNotFound());
         mvc.perform(delete("/api/accounts/999999").session(admin)).andExpect(status().isNotFound());
     }
+
+    // ===== linking accounts to staff ===== //
+
+    @Test
+    void linkStaff_isOneToOne_andCanBeUnlinked() throws Exception {
+        account("admin@test.com", UserRole.ADMIN);
+        UserAccountEntity a = account("a@test.com", UserRole.DISPATCHER);
+        UserAccountEntity b = account("b@test.com", UserRole.DISPATCHER);
+        long staffId = ((Number) com.jayway.jsonpath.JsonPath.read(
+                mvc.perform(post("/api/staff").contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"name\":\"ana reyes\",\"role\":\"driver\",\"employed\":true}")
+                                .session(sessionFor("admin@test.com")))
+                        .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id")).longValue();
+        MockHttpSession admin = sessionFor("admin@test.com");
+
+        mvc.perform(put("/api/accounts/" + a.getId() + "/staff/" + staffId).session(admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.staffId", is((int) staffId)));
+        mvc.perform(put("/api/accounts/" + a.getId() + "/staff/" + staffId).session(admin))
+                .andExpect(status().isOk());
+        mvc.perform(put("/api/accounts/" + b.getId() + "/staff/" + staffId).session(admin))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error", containsString("a@test.com")));
+
+        mvc.perform(delete("/api/accounts/" + a.getId() + "/staff").session(admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.staffId", nullValue()));
+        mvc.perform(put("/api/accounts/" + b.getId() + "/staff/" + staffId).session(admin))
+                .andExpect(status().isOk());
+    }
 }

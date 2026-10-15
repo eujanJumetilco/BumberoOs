@@ -1,5 +1,6 @@
 package com.groupnine.bumberoos.services;
 
+import com.groupnine.bumberoos.domain.entities.StaffEntity;
 import com.groupnine.bumberoos.domain.entities.UserAccountEntity;
 import com.groupnine.bumberoos.domain.enums.UserRole;
 import com.groupnine.bumberoos.domain.exceptions.ConflictException;
@@ -43,6 +44,25 @@ public class AccountAdministrationService {
                 if (role != UserRole.ADMIN) requireAnotherEnabledAdmin(account, "demote the last enabled administrator");
             }
             account.setRole(role);
+            return accounts.save(account);
+        });
+    }
+
+    /**
+     * Links the account to a staff member, or unlinks it when {@code staff} is null.
+     *
+     * @throws ConflictException if another account is already linked to that staff member
+     */
+    public Optional<UserAccountEntity> linkStaff(Long id, StaffEntity staff) {
+        return accounts.findById(id).map(account -> {
+            if (staff != null) {
+                accounts.findByStaffId(staff.getId()).ifPresent(other -> {
+                    if (!other.getId().equals(id)) {
+                        throw new ConflictException(staff.getName() + " is already linked to " + other.getEmail());
+                    }
+                });
+            }
+            account.setStaff(staff);
             return accounts.save(account);
         });
     }

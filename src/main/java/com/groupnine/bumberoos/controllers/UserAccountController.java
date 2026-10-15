@@ -73,13 +73,13 @@ public class UserAccountController {
     public UserAccountResponse linkStaff(@PathVariable Long id, @PathVariable Long staffId) {
         var staff = staffService.findById(staffId).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "staff " + staffId + " not found"));
-        return userAccountService.linkStaff(id, staff).map(userAccountMapper::toResponse)
+        return accountAdministration.linkStaff(id, staff).map(userAccountMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }
 
     @DeleteMapping("/{id}/staff")
     public UserAccountResponse unlinkStaff(@PathVariable Long id) {
-        return userAccountService.linkStaff(id, null).map(userAccountMapper::toResponse)
+        return accountAdministration.linkStaff(id, null).map(userAccountMapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }
 
