@@ -9,21 +9,19 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-/**
- * Cookie-session security for the API.
- *
- * <p>CSRF protection is switched off: the session cookie is HttpOnly and SameSite=Lax (see
- * application.properties) and the API is only reached same-origin through the UI's /api proxy, so
- * browsers do not attach it to cross-site requests. Revisit this if the API is ever exposed directly
- * to other origins.
- */
+import java.util.List;
+
 @Configuration
 public class SecurityConfig {
 
@@ -35,13 +33,15 @@ public class SecurityConfig {
             HttpSecurity http, UserAccountRepository accounts, UserAccountService accountService
     ) throws Exception {
         http
+                // ENABLE CORS PARA SA FRONTEND
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/registered", "/api/auth/signin").permitAll()
-                        // Anyone may create the very first admin; after that only an admin may add accounts.
+                        // PINAYAGAN NA NATIN YUNG EVENTS
+                        .requestMatchers("/api/auth/registered", "/api/auth/signin", "/api/events/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup").access(signupAllowed(accountService))
                         .requestMatchers("/api/accounts/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/settings/**").hasRole("ADMIN")
@@ -54,6 +54,18 @@ public class SecurityConfig {
         return http.build();
     }
 
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
     private static AuthorizationManager<RequestAuthorizationContext> signupAllowed(UserAccountService accounts) {
         return (authentication, context) -> new AuthorizationDecision(
                 !accounts.hasEnabledAdmin() || isAdmin(authentication.get()));
@@ -64,7 +76,7 @@ public class SecurityConfig {
                 && authentication.isAuthenticated()
                 && !(authentication instanceof AnonymousAuthenticationToken)
                 && authentication.getAuthorities().stream()
-                        .anyMatch(a -> a.getAuthority().equals("ROLE_" + UserRole.ADMIN.name()));
+                .anyMatch(a -> a.getAuthority().equals("ROLE_" + UserRole.ADMIN.name()));
     }
 
     private static void json(jakarta.servlet.http.HttpServletResponse response, int status, String body)
