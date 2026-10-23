@@ -9,9 +9,12 @@ import com.groupnine.bumberoos.domain.enums.IncidentSeverityLevel;
 import com.groupnine.bumberoos.domain.enums.IncidentStatus;
 import com.groupnine.bumberoos.domain.exceptions.BadRequestException;
 import com.groupnine.bumberoos.domain.exceptions.ConflictException;
+import com.groupnine.bumberoos.events.IncidentReportedEvent; // <-- BAGO
 import com.groupnine.bumberoos.repositories.IncidentRepository;
+import org.springframework.context.ApplicationEventPublisher; // <-- BAGO
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -26,9 +29,12 @@ import java.util.Optional;
 public class IncidentService {
 
     private final IncidentRepository incidentRepository;
+    private final ApplicationEventPublisher eventPublisher; // <-- BAGO
 
-    public IncidentService(IncidentRepository incidentRepository) {
+    // <-- BINAGO: Idinagdag ang eventPublisher sa constructor
+    public IncidentService(IncidentRepository incidentRepository, ApplicationEventPublisher eventPublisher) {
         this.incidentRepository = incidentRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     // =====> ADD <===== //
@@ -44,7 +50,13 @@ public class IncidentService {
         if (incident.getAlarmLevel() != null) {
             incident.getAlarmEvents().add(new IncidentAlarmEvent(incident, incident.getAlarmLevel(), LocalDateTime.now()));
         }
-        return incidentRepository.save(incident);
+
+        IncidentEntity savedIncident = incidentRepository.save(incident);
+
+        // <-- BAGO: I-trigger ang event pagkatapos ma-save
+        eventPublisher.publishEvent(new IncidentReportedEvent(this, savedIncident));
+
+        return savedIncident;
     }
 
     // =====> EDIT <===== //

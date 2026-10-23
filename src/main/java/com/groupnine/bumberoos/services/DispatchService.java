@@ -8,9 +8,11 @@ import com.groupnine.bumberoos.domain.enums.StaffAvailability;
 import com.groupnine.bumberoos.domain.exceptions.BadRequestException;
 import com.groupnine.bumberoos.domain.exceptions.ConflictException;
 import com.groupnine.bumberoos.domain.exceptions.ResourceNotFoundException;
+import com.groupnine.bumberoos.events.IncidentReportedEvent;
 import com.groupnine.bumberoos.repositories.IncidentItemAssignmentRepository;
 import com.groupnine.bumberoos.repositories.IncidentRepository;
 import com.groupnine.bumberoos.repositories.IncidentStaffAssignmentRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,19 +44,22 @@ public class DispatchService {
     private final IncidentItemAssignmentRepository itemAssignmentRepository;
     private final StaffService staffService;
     private final InventoryService inventoryService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DispatchService(
             IncidentRepository incidentRepository,
             IncidentStaffAssignmentRepository staffAssignmentRepository,
             IncidentItemAssignmentRepository itemAssignmentRepository,
             StaffService staffService,
-            InventoryService inventoryService
+            InventoryService inventoryService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.incidentRepository = incidentRepository;
         this.staffAssignmentRepository = staffAssignmentRepository;
         this.itemAssignmentRepository = itemAssignmentRepository;
         this.staffService = staffService;
         this.inventoryService = inventoryService;
+        this.eventPublisher = eventPublisher;
     }
 
     // =====> CREATE <===== //
@@ -106,6 +111,10 @@ public class DispatchService {
         for (Map.Entry<Long, Integer> line : itemsToAssign.entrySet()) {
             setItemQuantityOn(saved, line.getKey(), line.getValue(), now);
         }
+
+        // BAGONG LINYA: I-trigger ang event dito
+        eventPublisher.publishEvent(new IncidentReportedEvent(this, saved));
+
         return saved;
     }
 

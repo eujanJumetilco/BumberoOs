@@ -42,6 +42,28 @@ public class StaffService {
         return staffRepository.save(staff);
     }
 
+    // =====> RETIRE <===== //
+
+    /**
+     * Soft-removes a staff member: employed = false and availability = UNAVAILABLE. The record, its
+     * assignment history and any linked account are kept. Retiring someone who is already retired is a no-op.
+     *
+     * @return the updated staff member, or empty if not found.
+     * @throws ConflictException if the member is currently DISPATCHED or assigned to an open incident.
+     */
+    public Optional<StaffEntity> retireStaff(Long id) {
+        return staffRepository.findByIdForUpdate(id).map(staff -> {
+            if (staff.getStaffAvailability() == StaffAvailability.DISPATCHED
+                    || assignmentRepository.existsByStaffIdAndReleasedAtIsNull(id)) {
+                throw new ConflictException(staff.getName() + " is assigned to an incident; "
+                        + "release them before retiring");
+            }
+            staff.setEmployed(false);
+            staff.setStaffAvailability(StaffAvailability.UNAVAILABLE);
+            return staffRepository.save(staff);
+        });
+    }
+
     // =====> REMOVE <===== //
 
     /**

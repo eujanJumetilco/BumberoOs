@@ -33,15 +33,14 @@ public class SecurityConfig {
             HttpSecurity http, UserAccountRepository accounts, UserAccountService accountService
     ) throws Exception {
         http
-                // ENABLE CORS PARA SA FRONTEND
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable())
                 .authorizeHttpRequests(auth -> auth
-                        // PINAYAGAN NA NATIN YUNG EVENTS
-                        .requestMatchers("/api/auth/registered", "/api/auth/signin", "/api/events/**").permitAll()
+                        // PINAYAGAN NA NATIN LAHAT NG MODULES
+                        .requestMatchers("/api/auth/registered", "/api/auth/signin", "/api/events/**", "/api/staff/**", "/api/items/**", "/api/incidents/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup").access(signupAllowed(accountService))
                         .requestMatchers("/api/accounts/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/settings/**").hasRole("ADMIN")
@@ -58,7 +57,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of("http://localhost:3000"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

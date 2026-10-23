@@ -1,0 +1,250 @@
+package com.groupnine.bumberoos.controllers;
+
+import com.groupnine.bumberoos.domain.Event;
+import com.groupnine.bumberoos.repositories.EventRepository;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/events")
+public class EventController {
+
+    // A request DTO keeps clients from setting the id directly.
+    public record EventRequest(
+            String title, String description, String location,
+            LocalDateTime eventDate, Double latitude, Double longitude) {}
+
+    public record ImportResult(int imported) {}
+
+    private static final List<String> CSV_HEADERS =
+            List.of("ID", "Title", "Description", "Location", "Date", "Lat", "Lng");
+
+    private final EventRepository events;
+
+    public EventController(EventRepository events) {
+        this.events = events;
+    }
+
+    // ------------------ CRUD ------------------ //
+
+    @GetMapping
+    public List<Event> list() {
+        return events.findAllByOrderByEventDateAsc();
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Event create(@RequestBody EventRequest req) {
+        return events.save(buildEvent(req));
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void remove(@PathVariable Long id) {
+        if (!events.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "event " + id + " not found");
+        }
+        events.deleteById(id);
+    }
+
+    // ------------------ CSV EXPORT / IMPORT ------------------ //
+
+    /** Headers: ID, Title, Description, Location, Date, Lat, Lng. Date is ISO local date-time. */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportCsv() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.join(",", CSV_HEADERS)).append("\r\n");
+        for (Event e : events.findAllByOrderByEventDateAsc()) {
+            sb.append(csvRow(
+                    e.getId(), e.getTitle(), e.getDescription(), e.getLocation(),
+                    e.getEventDate(), e.getLatitude(), e.getLongitude())).append("\r\n");
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"events.csv\"")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(sb.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Imports rows as NEW events (the ID column is ignored so clients can't set ids).
+     * All-or-nothing: if any row is invalid, nothing is saved and the row errors are returned.
+     */
+    @PostMapping("/import")
+    public ImportResult importCsv(@RequestParam("file") MultipartFile file) throws IOException {
+        if (file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The CSV file is empty.");
+        }
+        String text = new String(file.getBytes(), StandardCharsets.UTF_8);
+        if (text.startsWith("\uFEFF")) text = text.substring(1); // strip Excel BOM
+
+        List<List<String>> rows;
+        try {
+            rows = parseCsv(text);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
+        if (rows.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The CSV file is empty.");
+        }
+
+        Map<String, Integer> col = new HashMap<>();
+        List<String> header = rows.get(0);
+        for (int i = 0; i < header.size(); i++) col.put(header.get(i).trim().toLowerCase(), i);
+        for (String required : List.of("title", "location", "date")) {
+            if (!col.containsKey(required)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Missing required column: " + required + ". Expected headers: "
+                                + String.join(", ", CSV_HEADERS));
+            }
+        }
+
+        List<Event> toSave = new ArrayList<>();
+        List<String> problems = new ArrayList<>();
+        for (int r = 1; r < rows.size(); r++) {
+            List<String> row = rows.get(r);
+            int line = r + 1;
+            try {
+                toSave.add(buildEvent(new EventRequest(
+                        cell(row, col, "title"),
+                        cell(row, col, "description"),
+                        cell(row, col, "location"),
+                        parseDate(cell(row, col, "date")),
+                        parseDouble(cell(row, col, "lat"), "Lat"),
+                        parseDouble(cell(row, col, "lng"), "Lng"))));
+            } catch (ResponseStatusException | IllegalArgumentException ex) {
+                String msg = ex instanceof ResponseStatusException rse ? rse.getReason() : ex.getMessage();
+                problems.add("Row " + line + ": " + msg);
+            }
+        }
+
+        if (!problems.isEmpty()) {
+            String shown = String.join(" ", problems.subList(0, Math.min(problems.size(), 5)));
+            if (problems.size() > 5) shown += " (+" + (problems.size() - 5) + " more)";
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Import failed, nothing saved. " + shown);
+        }
+        events.saveAll(toSave);
+        return new ImportResult(toSave.size());
+    }
+
+    // ------------------ HELPERS ------------------ //
+
+    /** Shared by POST and import so both enforce the same rules. */
+    private Event buildEvent(EventRequest req) {
+        if (req.title() == null || req.title().isBlank()
+                || req.location() == null || req.location().isBlank()
+                || req.eventDate() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Title, location and event date are required.");
+        }
+        if ((req.latitude() == null) != (req.longitude() == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Latitude and longitude must be provided together.");
+        }
+
+        Event e = new Event();
+        e.setTitle(req.title().trim());
+        e.setDescription(req.description() == null || req.description().isBlank()
+                ? null : req.description().trim());
+        e.setLocation(req.location().trim());
+        e.setEventDate(req.eventDate());
+        e.setLatitude(req.latitude());
+        e.setLongitude(req.longitude());
+        return e;
+    }
+
+    private static String cell(List<String> row, Map<String, Integer> col, String name) {
+        Integer i = col.get(name);
+        if (i == null || i >= row.size()) return null;
+        String v = row.get(i).trim();
+        return v.isEmpty() ? null : v;
+    }
+
+    /** Accepts 2026-10-22T09:00, 2026-10-22 09:00 or just 2026-10-22 (midnight). */
+    private static LocalDateTime parseDate(String s) {
+        if (s == null) return null;
+        try {
+            String v = s.replace(' ', 'T');
+            return v.length() == 10 ? LocalDateTime.parse(v + "T00:00:00") : LocalDateTime.parse(v);
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("invalid date '" + s + "' (use YYYY-MM-DDTHH:mm).");
+        }
+    }
+
+    private static Double parseDouble(String s, String name) {
+        if (s == null) return null;
+        try {
+            return Double.valueOf(s);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(name + " must be a number.");
+        }
+    }
+
+    private static String csvRow(Object... values) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) sb.append(',');
+            String s = values[i] == null ? "" : String.valueOf(values[i]);
+            sb.append('"').append(s.replace("\"", "\"\"")).append('"');
+        }
+        return sb.toString();
+    }
+
+    /** Minimal RFC 4180 parser: quoted fields, "" escapes, newlines inside quotes, CRLF/LF. */
+    private static List<List<String>> parseCsv(String text) {
+        List<List<String>> rows = new ArrayList<>();
+        List<String> row = new ArrayList<>();
+        StringBuilder cell = new StringBuilder();
+        boolean quoted = false;
+        int n = text.length();
+
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            if (quoted) {
+                if (c == '"') {
+                    if (i + 1 < n && text.charAt(i + 1) == '"') { cell.append('"'); i++; }
+                    else quoted = false;
+                } else {
+                    cell.append(c);
+                }
+            } else if (c == '"') {
+                quoted = true;
+            } else if (c == ',') {
+                row.add(cell.toString());
+                cell.setLength(0);
+            } else if (c == '\n' || c == '\r') {
+                if (c == '\r' && i + 1 < n && text.charAt(i + 1) == '\n') i++;
+                row.add(cell.toString());
+                cell.setLength(0);
+                addRow(rows, row);
+                row = new ArrayList<>();
+            } else {
+                cell.append(c);
+            }
+        }
+        if (quoted) throw new IllegalArgumentException("Malformed CSV: unterminated quoted field.");
+        if (cell.length() > 0 || !row.isEmpty()) {
+            row.add(cell.toString());
+            addRow(rows, row);
+        }
+        return rows;
+    }
+
+    private static void addRow(List<List<String>> rows, List<String> row) {
+        boolean blank = row.stream().allMatch(s -> s.isBlank());
+        if (!blank) rows.add(row);
+    }
+}
