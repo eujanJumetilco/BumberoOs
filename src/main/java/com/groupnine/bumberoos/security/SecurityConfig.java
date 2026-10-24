@@ -3,6 +3,7 @@ package com.groupnine.bumberoos.security;
 import com.groupnine.bumberoos.domain.enums.UserRole;
 import com.groupnine.bumberoos.repositories.UserAccountRepository;
 import com.groupnine.bumberoos.services.UserAccountService;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -39,6 +40,9 @@ public class SecurityConfig {
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable())
                 .authorizeHttpRequests(auth -> auth
+                        // The notification stream (SseEmitter) is re-dispatched by the container when it ends or
+                        // times out; that internal dispatch has no session of its own and must not be re-checked.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         // PINAYAGAN NA NATIN LAHAT NG MODULES
                         .requestMatchers("/api/auth/registered", "/api/auth/signin", "/api/events/**", "/api/staff/**", "/api/items/**", "/api/incidents/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup").access(signupAllowed(accountService))

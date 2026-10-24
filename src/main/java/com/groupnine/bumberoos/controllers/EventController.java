@@ -1,8 +1,10 @@
 package com.groupnine.bumberoos.controllers;
 
 import com.groupnine.bumberoos.domain.Event;
+import com.groupnine.bumberoos.events.EventCreatedEvent;
 import com.groupnine.bumberoos.repositories.EventRepository;
 import com.groupnine.bumberoos.util.CsvSupport;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +30,11 @@ public class EventController {
             List.of("ID", "Title", "Description", "Location", "Date", "Lat", "Lng");
 
     private final EventRepository events;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public EventController(EventRepository events) {
+    public EventController(EventRepository events, ApplicationEventPublisher eventPublisher) {
         this.events = events;
+        this.eventPublisher = eventPublisher;
     }
 
     // ------------------ CRUD ------------------ //
@@ -42,8 +46,11 @@ public class EventController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
     public Event create(@RequestBody EventRequest req) {
-        return events.save(buildEvent(req));
+        Event saved = events.save(buildEvent(req));
+        eventPublisher.publishEvent(EventCreatedEvent.single(this, saved)); // notifies after the commit
+        return saved;
     }
 
     @DeleteMapping("/{id}")
@@ -79,7 +86,9 @@ public class EventController {
     public CsvSupport.ImportResult importFile(@RequestParam("file") MultipartFile file) {
         CsvSupport.Table table = CsvSupport.parse(file);
         table.require(CSV_HEADERS, "title", "location", "date|event date");
-        return CsvSupport.importRows(table, this::toEvent, events::save);
+        CsvSupport.ImportResult result = CsvSupport.importRows(table, this::toEvent, events::save);
+        eventPublisher.publishEvent(EventCreatedEvent.imported(this, result.imported())); // one notification per import
+        return result;
     }
 
     // ------------------ HELPERS ------------------ //
