@@ -4,6 +4,7 @@ import com.groupnine.bumberoos.dto.NotificationResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -20,6 +21,7 @@ public class NotificationBroadcaster {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationBroadcaster.class);
     private static final long TIMEOUT_MS = 30L * 60 * 1000;
+    private static final long KEEP_ALIVE_MS = 30L * 1000;
 
     private final Set<SseEmitter> emitters = ConcurrentHashMap.newKeySet();
 
@@ -54,6 +56,21 @@ public class NotificationBroadcaster {
             } catch (RuntimeException ex) {
                 log.warn("Could not push notification {}: {}", notification.id(), ex.getMessage());
                 emitters.remove(emitter);
+            }
+        }
+    }
+
+    /**
+     * Sends an SSE comment to every open stream so proxies keep quiet connections open (Vercel's proxy
+     * drops a request after 120 seconds without data). Browsers ignore comments.
+     */
+    @Scheduled(fixedRate = KEEP_ALIVE_MS)
+    public void keepAlive() {
+        for (SseEmitter emitter : emitters) {
+            try {
+                emitter.send(SseEmitter.event().comment("keep-alive"));
+            } catch (IOException | RuntimeException ex) {
+                emitters.remove(emitter); // that browser went away
             }
         }
     }
